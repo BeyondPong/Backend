@@ -3,3 +3,4 @@ psycopg2-binary==2.9.6
 pillow
 django-allauth==0.63.1
 channels
+python-decouple==3.8
