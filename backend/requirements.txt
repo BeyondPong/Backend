@@ -1,6 +1,7 @@
 Django==3.2.13
 psycopg2-binary==2.9.6
-pillow
+pillow==10.3.0
 django-allauth==0.63.1
 channels
 python-decouple==3.8
+djangorestframework
