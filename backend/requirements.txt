@@ -46,3 +46,4 @@ urllib3==2.2.1
 wsproto==1.2.0
 zope.interface==6.4
 uvicorn==0.29.0
+djangorestframework
