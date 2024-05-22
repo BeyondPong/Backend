@@ -16,7 +16,7 @@ class GetGameHistory(APIView):
         user_id = request.user.id
         games = Game.objects.filter(
             Q(user1_id=user_id) | Q(user2_id=user_id)
-        ).order_by('-created_at')
+        ).order_by('-created_at')[:10]
         histories = self.create_game_histories_json(user_id, games)
         return JsonResponse({"histories": histories}, status=status.HTTP_200_OK)
 
