@@ -12,16 +12,18 @@ class Member(models.Model):
     nickname = models.CharField(max_length=20, null=False, blank=False)
     profile_img = models.ImageField(upload_to="profile_images/", null=True, blank=True)
     status_msg = models.CharField(max_length=40, null=True, blank=True)
-    language = models.CharField(max_length=2, choices=LANGUAGE_CODE)
+    language = models.CharField(max_length=2, choices=LANGUAGE_CODE, default="en")
 
     def __str__(self):
         return self.nickname
 
 
 class Friend(models.Model):
-    user = models.ForeignKey(Member, related_name="friends", on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        Member, related_name="friends", on_delete=models.CASCADE, null=False, blank=False
+    )
     friend = models.ForeignKey(
-        Member, related_name="friend_of", on_delete=models.CASCADE
+        Member, related_name="friend_of", on_delete=models.CASCADE, null=False, blank=False
     )
 
     class Meta:
