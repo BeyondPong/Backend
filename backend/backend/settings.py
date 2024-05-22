@@ -27,7 +27,7 @@ SECRET_KEY = "django-insecure-!^d$%0r#%r91%*)1yxp^&un_)$bag*1o&41+xj408)$qchx_gr
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
 
 # Application definition
@@ -45,7 +45,9 @@ INSTALLED_APPS = [
     "login",
     "game",
     "user",
+    "channels",
 ]
+
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -143,3 +145,14 @@ MEDIA_ROOT = os.path.join(BASE_DIR, "media/")
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static/")
+
+ASGI_APPLICATION = "backend.asgi.application"
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("redis", 6379)],
+        },
+    },
+}

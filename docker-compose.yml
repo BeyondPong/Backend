@@ -17,6 +17,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - network
+
+  redis:
+    image: redis:hihi
+    pull_policy: never
+    build:
+      context: ./redis
+      dockerfile: Dockerfile
+    container_name: redis
+    networks:
+      - network
+
 
   backend:
     build: ./backend
@@ -33,6 +46,13 @@ services:
     working_dir: /backend
     ports:
       - "8000:8000"
+    networks:
+      - network
 
 volumes:
   postgres_data:
+
+networks:
+  network:
+    name: network
+    driver: bridge
