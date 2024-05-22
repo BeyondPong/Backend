@@ -36,6 +36,8 @@ class Game(models.Model):
     def clean(self):
         if self.user1_id == self.user2_id:
             raise ValidationError("User and friend cannot be the same person.")
+        if self.user1_score == self.user2_score:
+            raise ValidationError("Score cannot be the same.")
 
     def save(self, *args, **kwargs):
         self.clean()

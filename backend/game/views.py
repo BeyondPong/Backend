@@ -1,5 +1,5 @@
 # Create your views here.
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
 from rest_framework import status
 from rest_framework.views import APIView
 
