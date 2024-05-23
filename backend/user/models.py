@@ -10,7 +10,9 @@ class Member(models.Model):
         ("jp", "Japanese"),
     ]
     nickname = models.CharField(max_length=20, null=False, blank=False)
-    profile_img = models.ImageField(upload_to="profile_images/", null=True, blank=True)
+    profile_img = models.ImageField(
+        upload_to="profile_images/", null=True, blank=True, default="profile_images/default_img.jpg"
+    )
     status_msg = models.CharField(max_length=40, null=True, blank=True)
     language = models.CharField(max_length=2, choices=LANGUAGE_CODE, default="en")
 
