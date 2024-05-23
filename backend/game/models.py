@@ -13,14 +13,14 @@ class Game(models.Model):
         ("TOURNAMENT", "Tournament Game"),
     ]
 
-    user1_id = models.ForeignKey(
+    user1 = models.ForeignKey(
         Member,
         related_name="games_as_user1",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
     )
-    user2_id = models.ForeignKey(
+    user2 = models.ForeignKey(
         Member,
         related_name="games_as_user2",
         null=True,
