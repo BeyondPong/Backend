@@ -34,7 +34,7 @@ class Game(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def clean(self):
-        if self.user1_id == self.user2_id:
+        if self.user1 == self.user2:
             raise ValidationError("User and friend cannot be the same person.")
         if self.user1_score == self.user2_score:
             raise ValidationError("Score cannot be the same.")
@@ -44,4 +44,4 @@ class Game(models.Model):
         super(Game, self).save(*args, **kwargs)
 
     def __str__(self):
-        return f"user1 : {self.user1_id}, user2: {self.user2_id} type : {self.game_type} {self.created_at}"
+        return f"user1 : {self.user1}, user2: {self.user2} type : {self.game_type} {self.created_at}"

@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 
 from game.serializers import GameResultSerializer
+from django.shortcuts import render
 
 
 class GameResultView(APIView):
@@ -16,7 +17,6 @@ class GameResultView(APIView):
         else:
             # 데이터 검증 실패 시 에러 응답
             return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-from django.shortcuts import render
 
 
 def index(request):
