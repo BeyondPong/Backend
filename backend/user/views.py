@@ -1,4 +1,5 @@
-from django.db.models import Q
+from django.core.files.storage import default_storage
+from django.db.models import Q, F
 
 # Create your views here.
 
@@ -26,12 +27,12 @@ class GetGameHistory(APIView):
     def create_game_histories_json(self, user_id, games):
         histories = []
         for game in games:
-            if game.user1_id.id == user_id:
-                opponent = game.user2_id.nickname
+            if game.user1.id == user_id:
+                opponent = game.user2.nickname
                 my_score = game.user1_score
                 opponent_score = game.user2_score
             else:
-                opponent = game.user1_id.nickname
+                opponent = game.user1.nickname
                 my_score = game.user2_score
                 opponent_score = game.user1_score
 
@@ -68,3 +69,53 @@ class AddFriendView(APIView):
         friend = Friend(user=user, friend=friend_member)
         friend.save()
         return JsonResponse({'message': '친구가 추가 되었습니다.'}, status=status.HTTP_201_CREATED)
+
+
+class GetUserInformationView(APIView):
+    def get(self, request):
+        user_id = 1
+        user = Member.objects.get(id=user_id)
+        win_cnt = Game.objects.filter(
+            (Q(user1=user) & Q(user1_score__gt=F('user2_score'))) |
+            (Q(user2=user) & Q(user2_score__gt=F('user1_score')))
+        ).count()
+        lose_cnt = Game.objects.filter(
+            (Q(user1=user) & Q(user1_score__lt=F('user2_score'))) |
+            (Q(user2=user) & Q(user2_score__lt=F('user1_score')))
+        ).count()
+        return JsonResponse({"nickname": user.nickname,
+                             "profile_img": user.profile_img.url,
+                             "status_msg": user.status_msg,
+                             "win_cnt": win_cnt,
+                             "lose_cnt": lose_cnt,
+                             "language": user.language})
+
+
+class PatchUserPhotoView(APIView):
+    def patch(self, request):
+        # todo 로그인 유저로 수정
+        user_id = 1
+        member = Member.objects.get(id=user_id)
+        file = request.FILES.get('profile_img')
+        if not file:
+            return JsonResponse({'error': 'No file provided'}, status=400)
+        if member.profile_img:
+            if default_storage.exists(member.profile_img.name):
+                default_storage.delete(member.profile_img.name)
+
+        member.profile_img.save(file.name, file, save=True)
+
+        return JsonResponse({'profile_img_url': member.profile_img.url}, status=200)
+
+
+class PatchUserStatusMsgView(APIView):
+    def patch(self, request):
+        # todo 로그인 유저로 수정
+        user_id = 1
+        member = Member.objects.get(id=user_id)
+        if 'status_msg' not in request.data:
+            return JsonResponse({'error': 'No status_msg provided'}, status=400)
+        status_msg = request.data['status_msg']
+        member.status_msg = status_msg
+        member.save()
+        return JsonResponse({'message': status_msg}, status=200)

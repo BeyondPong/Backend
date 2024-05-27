@@ -59,6 +59,18 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+CSRF_TRUSTED_ORIGINS = ["localhost:8000"]
+
+CSRF_COOKIE_DOMAIN = "bluemix.net"
+
+CORS_ALLOW_HEADERS = [
+    "x-csrftoken",
+]
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_CREDENTIALS = True
+
 ROOT_URLCONF = "backend.urls"
 
 TEMPLATES = [
