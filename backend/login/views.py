@@ -1,11 +1,14 @@
-from django.http import JsonResponse
-from django.shortcuts import render, redirect
-from django.conf import settings
-
 import requests
+import jwt
+
+from datetime import datetime, timedelta
+from django.http import JsonResponse
+from django.shortcuts import redirect
+from django.conf import settings
+from requests import RequestException
 
 
-# Create your views here.
+# OAuth 서비스로 리다이렉트하는 뷰
 def redirect_to_oauth_provider(request):
     params = {
         "client_id": settings.OAUTH_CLIENT_ID,
@@ -16,27 +19,7 @@ def redirect_to_oauth_provider(request):
     return redirect(request_url)
 
 
-def oauth_callback(request):
-    code = request.GET.get("code")
-    if code:
-        token_data = request_access_token(code)
-        access_token = token_data("access_token")
-
-        # 사용자 정보 요청
-        user_info = get_user_info(access_token)
-
-        # 예: 세션에 정보 저장
-        request.session["user_id"] = user_info["id"]
-        request.session["user_name"] = user_info["login"]
-
-        # JWT를 생성하여 쿠키에 저장 (필요시 JWT 생성 함수 추가)
-        # jwt_token = create_jwt_token(user_info)
-        # response.set_cookie("jwt_token", jwt_token, httponly=True)
-
-        return JsonResponse({"message": "Login successful", "user_info": user_info})
-    return JsonResponse({"error": "Authorization Failed"}, status=400)
-
-
+# 액세스 토큰 요청
 def request_access_token(code):
     data = {
         "grant_type": "authorization_code",
@@ -45,13 +28,54 @@ def request_access_token(code):
         "code": code,
         "redirect_uri": settings.OAUTH_REDIRECT_URI,
     }
-    response = requests.post(settings.OAUTH_TOKEN_URL, data=data)
-    return response.json()
+    try:
+        response = requests.post(settings.OAUTH_TOKEN_URL, data=data)
+        # HTTP 오류 발생 시 예외 발생
+        response.raise_for_status()
+        return response.json()
+    except RequestException as e:
+        return {"error": str(e)}
 
 
+# JWT 생성
+def create_jwt_token(user_info):
+    payload = {
+        "user_id": user_info["id"],
+        "exp": datetime.utcnow() + timedelta(hours=1),
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+
+
+# 사용자 정보 요청
 def get_user_info(access_token):
     headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        user_info_url = "https://api.intra.42.fr/v2/me"
+        response = requests.get(user_info_url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except RequestException as e:
+        return {"error": str(e)}
 
-    user_info_url = "https://api.intra.42.fr/v2/me"
-    response = requests.get(user_info_url, headers=headers)
-    return response.json()
+
+# OAuth 콜백 처리 및 JWT 생성
+def oauth_callback(request):
+    code = request.GET.get("code")
+    if code:
+        token_data = request_access_token(code)
+        access_token = token_data.get("access_token")
+
+        if not access_token:
+            return JsonResponse({"error": "Authorization Failed"}, status=400)
+
+        user_info = get_user_info(access_token)
+
+        # JWT 생성 및 쿠키 설정
+        jwt_token = create_jwt_token(user_info)
+        response = JsonResponse({"message": "Login successful", "user_info": user_info})
+        response.set_cookie("jwt_token", jwt_token, httponly=True)
+
+        return response
+
+    return JsonResponse({"error": "Authorization Failed"}, status=400)
