@@ -7,4 +7,6 @@ urlpatterns = [
     path('search/', views.SearchUserView.as_view(), name='search_user'),
     path('search/<int:user_id>/', views.AddFriendView.as_view(), name='add_user'),
     path('information/', views.GetUserInformationView.as_view(), name='information'),
+    path('information/photo/', views.PatchUserPhotoView.as_view(), name='information_photo'),
+    path('information/message/', views.PatchUserStatusMsgView.as_view(), name='information_message'),
 ]
