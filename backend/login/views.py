@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.conf import settings
-from requests import RequestException
+from requests.exceptions import RequestException
 
 
 # OAuth 서비스로 리다이렉트하는 뷰
@@ -30,7 +30,18 @@ def request_access_token(code):
     }
     try:
         response = requests.post(settings.OAUTH_TOKEN_URL, data=data)
-        # HTTP 오류 발생 시 예외 발생
+        response.raise_for_status()
+        return response.json()
+    except RequestException as e:
+        return {"error": str(e)}
+
+
+# 사용자 정보 요청
+def get_user_info(access_token):
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        user_info_url = "https://api.intra.42.fr/v2/me"
+        response = requests.get(user_info_url, headers=headers)
         response.raise_for_status()
         return response.json()
     except RequestException as e:
@@ -45,18 +56,6 @@ def create_jwt_token(user_info):
         "iat": datetime.utcnow(),
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
-
-
-# 사용자 정보 요청
-def get_user_info(access_token):
-    headers = {"Authorization": f"Bearer {access_token}"}
-    try:
-        user_info_url = "https://api.intra.42.fr/v2/me"
-        response = requests.get(user_info_url, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except RequestException as e:
-        return {"error": str(e)}
 
 
 # OAuth 콜백 처리 및 JWT 생성
