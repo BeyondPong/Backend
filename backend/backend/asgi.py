@@ -6,8 +6,8 @@ from channels.security.websocket import AllowedHostsOriginValidator
 from django.urls import re_path
 
 from game.consumers import ChatConsumer
+from user.consumers import MemberConsumer
 
-# from ..game.routing import websocket_urlpatterns
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "backend.settings")
 
@@ -22,7 +22,11 @@ application = ProtocolTypeRouter(
                     re_path(
                         r"ws/play/(?P<room_name>\w+)/$",
                         ChatConsumer.as_asgi(),
-                    )
+                    ),
+                    re_path(
+                        r"ws/member/(?P<user_id>\w+)/$",
+                        MemberConsumer.as_asgi(),
+                    ),
                 ]
             )
         ),

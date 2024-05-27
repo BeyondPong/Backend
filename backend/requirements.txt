@@ -30,7 +30,7 @@ pycparser==2.22
 pyOpenSSL==24.1.0
 PySocks==1.7.1
 redis==5.0.4
-requests==2.32.2
+requests==2.32.2 # OAuth 토큰을 요청하고, API호출
 selenium==4.21.0
 service-identity==24.1.0
 six==1.16.0
@@ -47,3 +47,5 @@ wsproto==1.2.0
 zope.interface==6.4
 uvicorn==0.29.0
 djangorestframework
+whitenoise==6.6.0
+jwt
