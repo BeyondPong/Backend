@@ -119,3 +119,12 @@ class PatchUserStatusMsgView(APIView):
         member.status_msg = status_msg
         member.save()
         return JsonResponse({'message': status_msg}, status=200)
+
+
+class FriendDeleteAPIView(APIView):
+    def delete(self, request, user_id):
+        # todo 사용자 정보로 수정
+        user = Member.objects.get(id=1)
+        friend = get_object_or_404(Friend, user=user, friend_id=user_id)
+        friend.delete()
+        return JsonResponse({'message': 'Friend deleted successfully.'}, status=200)
