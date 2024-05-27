@@ -23,6 +23,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("profile/", include("user.urls")),
     path("play/", include("game.urls")),
+    path("login/", include("login.urls")),
 ]
 
 if settings.DEBUG:
