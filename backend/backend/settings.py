@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
+import sys
 from pathlib import Path
 import os
 from decouple import config
@@ -17,6 +18,11 @@ from decouple import config
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+OAUTH_CLIENT_ID = config("OAUTH_CLIENT_ID")
+OAUTH_CLIENT_SECRET = config("OAUTH_CLIENT_SECRET")
+OAUTH_REDIRECT_URI = config("OAUTH_REDIRECT_URI", default="http://localhost:8000/")
+OAUTH_TOKEN_URL = "https://api.intra.42.fr/oauth/token"
+OAUTH_AUTHORIZATION_URL = "https://api.intra.42.fr/oauth/authorize"
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
@@ -39,9 +45,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-
     "rest_framework",
-
     "login",
     "game",
     "user",
@@ -57,6 +61,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
 ]
 
 ROOT_URLCONF = "backend.urls"
@@ -77,12 +82,12 @@ TEMPLATES = [
     },
 ]
 
+ASGI_APPLICATION = "backend.asgi.application"
 WSGI_APPLICATION = "backend.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
-
 DATABASES = {
     "default": {
         # "ENGINE": "django.db.backends.sqlite3",
@@ -146,7 +151,6 @@ MEDIA_ROOT = os.path.join(BASE_DIR, "media/")
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static/")
 
-ASGI_APPLICATION = "backend.asgi.application"
 
 CHANNEL_LAYERS = {
     "default": {
