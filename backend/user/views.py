@@ -3,9 +3,9 @@ from django.db.models import Q, F
 
 # Create your views here.
 
-from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from game.models import Game
@@ -22,7 +22,7 @@ class GetGameHistory(APIView):
             Q(user1_id=user_id) | Q(user2_id=user_id)
         ).order_by('-created_at')[:10]
         histories = self.create_game_histories_json(user_id, games)
-        return JsonResponse({"histories": histories}, status=status.HTTP_200_OK)
+        return Response({"histories": histories}, status=status.HTTP_200_OK)
 
     def create_game_histories_json(self, user_id, games):
         histories = []
@@ -55,7 +55,7 @@ class SearchUserView(APIView):
         nickname = request.GET.get('nickname', '')
         members = Member.objects.filter(nickname__icontains=nickname)[:10]
         serializer = MemberSerializer(members, many=True, context={'request': request})
-        return JsonResponse({"users:": serializer.data}, safe=False)
+        return Response({"users:": serializer.data}, safe=False)
 
 
 class AddFriendView(APIView):
@@ -64,11 +64,11 @@ class AddFriendView(APIView):
         user = Member.objects.get(id=1)
         friend_member = get_object_or_404(Member, pk=user_id)
         if user.friends.filter(Q(user=user) & Q(friend=friend_member)).exists():
-            return JsonResponse({'message': '이미 친구 입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'message': '이미 친구 입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         friend = Friend(user=user, friend=friend_member)
         friend.save()
-        return JsonResponse({'message': '친구가 추가 되었습니다.'}, status=status.HTTP_201_CREATED)
+        return Response({'message': '친구가 추가 되었습니다.'}, status=status.HTTP_201_CREATED)
 
 
 class GetUserInformationView(APIView):
@@ -83,7 +83,7 @@ class GetUserInformationView(APIView):
             (Q(user1=user) & Q(user1_score__lt=F('user2_score'))) |
             (Q(user2=user) & Q(user2_score__lt=F('user1_score')))
         ).count()
-        return JsonResponse({"nickname": user.nickname,
+        return Response({"nickname": user.nickname,
                              "profile_img": user.profile_img.url,
                              "status_msg": user.status_msg,
                              "win_cnt": win_cnt,
@@ -98,14 +98,14 @@ class PatchUserPhotoView(APIView):
         member = Member.objects.get(id=user_id)
         file = request.FILES.get('profile_img')
         if not file:
-            return JsonResponse({'error': 'No file provided'}, status=400)
+            return Response({'error': 'No file provided'}, status=400)
         if member.profile_img:
             if default_storage.exists(member.profile_img.name):
                 default_storage.delete(member.profile_img.name)
 
         member.profile_img.save(file.name, file, save=True)
 
-        return JsonResponse({'profile_img_url': member.profile_img.url}, status=200)
+        return Response({'profile_img_url': member.profile_img.url}, status=200)
 
 
 class PatchUserStatusMsgView(APIView):
@@ -114,11 +114,11 @@ class PatchUserStatusMsgView(APIView):
         user_id = 1
         member = Member.objects.get(id=user_id)
         if 'status_msg' not in request.data:
-            return JsonResponse({'error': 'No status_msg provided'}, status=400)
+            return Response({'error': 'No status_msg provided'}, status=400)
         status_msg = request.data['status_msg']
         member.status_msg = status_msg
         member.save()
-        return JsonResponse({'message': status_msg}, status=200)
+        return Response({'message': status_msg}, status=200)
 
 
 class FriendDeleteAPIView(APIView):
@@ -127,4 +127,4 @@ class FriendDeleteAPIView(APIView):
         user = Member.objects.get(id=1)
         friend = get_object_or_404(Friend, user=user, friend_id=user_id)
         friend.delete()
-        return JsonResponse({'message': 'Friend deleted successfully.'}, status=200)
+        return Response({'message': 'Friend deleted successfully.'}, status=200)
