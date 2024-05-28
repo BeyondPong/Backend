@@ -4,6 +4,7 @@ from django.db.models import Q, F
 # Create your views here.
 
 from django.shortcuts import get_object_or_404
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,6 +16,7 @@ from user.serializers import MemberSerializer
 
 
 class GetGameHistory(APIView):
+    @swagger_auto_schema(operation_description="사용자의 전적 내역 조회 api.")
     def get(self, request):
         # todo 이부분은 나중에 jwt Token에서 가져오는 방법으로 바꿀 예정
         user_id = 1
@@ -51,6 +53,7 @@ class GetGameHistory(APIView):
 
 
 class SearchUserView(APIView):
+    @swagger_auto_schema(operation_description="유저 검색 결과 조회 api.")
     def get(self, request):
         nickname = request.GET.get('nickname', '')
         members = Member.objects.filter(nickname__icontains=nickname)[:10]
@@ -59,6 +62,7 @@ class SearchUserView(APIView):
 
 
 class AddFriendView(APIView):
+    @swagger_auto_schema(operation_description="친구 추가 api")
     def post(self, request, user_id):
         # todo 로그인 유저로 수정
         user = Member.objects.get(id=1)
@@ -72,6 +76,7 @@ class AddFriendView(APIView):
 
 
 class GetUserInformationView(APIView):
+    @swagger_auto_schema(operation_description="사용자의 프로필 정보 조회 api")
     def get(self, request):
         user_id = 1
         user = Member.objects.get(id=user_id)
@@ -92,6 +97,7 @@ class GetUserInformationView(APIView):
 
 
 class PatchUserPhotoView(APIView):
+    @swagger_auto_schema(operation_description="사용자의 프로필 사진 수정 api.")
     def patch(self, request):
         # todo 로그인 유저로 수정
         user_id = 1
@@ -109,6 +115,7 @@ class PatchUserPhotoView(APIView):
 
 
 class PatchUserStatusMsgView(APIView):
+    @swagger_auto_schema(operation_description="사용자의 상태 메세지 수정 api.")
     def patch(self, request):
         # todo 로그인 유저로 수정
         user_id = 1
@@ -122,6 +129,7 @@ class PatchUserStatusMsgView(APIView):
 
 
 class FriendDeleteAPIView(APIView):
+    @swagger_auto_schema(operation_description="친구 삭제 api(user_id 는 친구의 id).")
     def delete(self, request, user_id):
         # todo 사용자 정보로 수정
         user = Member.objects.get(id=1)

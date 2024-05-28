@@ -1,4 +1,5 @@
 # Create your views here.
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -8,6 +9,7 @@ from django.shortcuts import render
 
 
 class GameResultView(APIView):
+    @swagger_auto_schema(operation_description="Game 종류 후 결과 데이터 입력 api.")
     def post(self, request):
         serializer = GameResultSerializer(data=request.data)
         if serializer.is_valid():
