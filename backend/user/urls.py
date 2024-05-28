@@ -9,4 +9,5 @@ urlpatterns = [
     path('information/', views.GetUserInformationView.as_view(), name='information'),
     path('information/photo/', views.PatchUserPhotoView.as_view(), name='information_photo'),
     path('information/message/', views.PatchUserStatusMsgView.as_view(), name='information_message'),
+    path('friends/<int:user_id>/', views.FriendDeleteAPIView.as_view(), name='delete_friend'),
 ]
