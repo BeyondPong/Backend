@@ -24,11 +24,10 @@ from rest_framework import permissions
 
 schema_view = get_schema_view(
    openapi.Info(
-      title="API 문서",
+      title="트센 백엔드 API 문서",
       default_version='v1',
-      description="API 설명",
-      terms_of_service="URL",
-      contact=openapi.Contact(email="contact@yourapi.com"),
+      description="트센 백엔드 API",
+      contact=openapi.Contact(email="ko9603@gmail.com"),
       license=openapi.License(name="BSD License"),
    ),
    public=True,
