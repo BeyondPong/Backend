@@ -50,3 +50,4 @@ djangorestframework
 whitenoise==6.6.0
 jwt
 drf-yasg
+django-cors-headers
