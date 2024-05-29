@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 from game.models import Game
 from user.models import Member, Friend
 
-from user.serializers import MemberSerializer
+from user.serializers import MemberSearchSerializer, MemberInfoSerializer
 
 
 class GetGameHistory(APIView):
@@ -56,9 +56,11 @@ class SearchUserView(APIView):
     @swagger_auto_schema(operation_description="유저 검색 결과 조회 api.")
     def get(self, request):
         nickname = request.GET.get('nickname', '')
-        members = Member.objects.filter(nickname__icontains=nickname)[:10]
-        serializer = MemberSerializer(members, many=True, context={'request': request})
-        return Response({"users:": serializer.data}, safe=False)
+        # todo 로그인 유저로 수정
+        user_id = 1
+        members = Member.objects.filter(nickname__icontains=nickname).exclude(id=user_id)[:10]
+        serializer = MemberSearchSerializer(members, many=True, context={'request': request})
+        return Response({"users:": serializer.data})
 
 
 class AddFriendView(APIView):
@@ -88,12 +90,18 @@ class GetUserInformationView(APIView):
             (Q(user1=user) & Q(user1_score__lt=F('user2_score'))) |
             (Q(user2=user) & Q(user2_score__lt=F('user1_score')))
         ).count()
-        return Response({"nickname": user.nickname,
-                             "profile_img": user.profile_img.url,
-                             "status_msg": user.status_msg,
-                             "win_cnt": win_cnt,
-                             "lose_cnt": lose_cnt,
-                             "language": user.language})
+
+        user_data = {
+            'nickname': user.nickname,
+            'profile_img': user.profile_img,
+            'status_msg': user.status_msg,
+            'win_cnt': win_cnt,
+            'lose_cnt': lose_cnt,
+            'language': user.language,
+        }
+
+        serializer = MemberInfoSerializer(user_data, context={'request': request})
+        return Response(serializer.data)
 
 
 class PatchUserPhotoView(APIView):
