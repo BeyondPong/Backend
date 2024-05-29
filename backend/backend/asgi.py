@@ -5,7 +5,7 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
 from django.urls import re_path
 
-from game.consumers import ChatConsumer
+from game.consumers import GameConsumer
 from user.consumers import MemberConsumer
 
 
@@ -21,10 +21,10 @@ application = ProtocolTypeRouter(
                 [
                     re_path(
                         r"ws/play/(?P<room_name>\w+)/$",
-                        ChatConsumer.as_asgi(),
+                        GameConsumer.as_asgi(),
                     ),
                     re_path(
-                        r"ws/member/(?P<user_id>\w+)/$",
+                        r"ws/member/login_room/$",
                         MemberConsumer.as_asgi(),
                     ),
                 ]
