@@ -24,6 +24,8 @@ OAUTH_REDIRECT_URI = config("OAUTH_REDIRECT_URI", default="http://localhost:8000
 OAUTH_TOKEN_URL = "https://api.intra.42.fr/oauth/token"
 OAUTH_AUTHORIZATION_URL = "https://api.intra.42.fr/oauth/authorize"
 
+AUTH_USER_MODEL = 'user.Member'
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
@@ -164,7 +166,7 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# AUTH_USER_MODEL = "user.Member1"
+AUTH_USER_MODEL = "user.Member"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, "media/")
