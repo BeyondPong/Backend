@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import Member, Friend
+from django.contrib.auth.models import Group
 
-# Register your models here.
-admin.site.register(Member)
 admin.site.register(Friend)
+admin.site.register(Member)
+admin.site.unregister(Group)
