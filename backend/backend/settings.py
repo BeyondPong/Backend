@@ -35,6 +35,9 @@ SECRET_KEY = "django-insecure-!^d$%0r#%r91%*)1yxp^&un_)$bag*1o&41+xj408)$qchx_gr
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+# for postman test(redirect by slash'/')
+APPEND_SLASH = False
+
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
 
