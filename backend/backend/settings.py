@@ -20,8 +20,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 OAUTH_CLIENT_ID = config("OAUTH_CLIENT_ID")
 OAUTH_CLIENT_SECRET = config("OAUTH_CLIENT_SECRET")
-OAUTH_REDIRECT_URI = config("OAUTH_REDIRECT_URI", default="http://localhost:8000/")
-OAUTH_TOKEN_URL = "https://api.intra.42.fr/oauth/token"
+OAUTH_REDIRECT_URI = config("OAUTH_REDIRECT_URI", default="http://localhost:5173/login_code/")
+OAUTH_TOKEN_URL = "https://api.intra.42.fr/oauth/token"  # delete >> env
 OAUTH_AUTHORIZATION_URL = "https://api.intra.42.fr/oauth/authorize"
 
 AUTH_USER_MODEL = 'user.Member'
@@ -178,5 +178,19 @@ CHANNEL_LAYERS = {
         "CONFIG": {
             "hosts": [("redis", 6379)],
         },
+    },
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',  # 필요한 경우 INFO, WARNING 등으로 변경 가능
     },
 }
