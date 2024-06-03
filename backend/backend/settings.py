@@ -73,10 +73,11 @@ MIDDLEWARE = [
 
 CSRF_TRUSTED_ORIGINS = ["localhost:8000"]
 
-CSRF_COOKIE_DOMAIN = "bluemix.net"
+# CSRF_COOKIE_DOMAIN = "bluemix.net"
 
 CORS_ALLOW_HEADERS = [
     "x-csrftoken",
+    "content-type",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
