@@ -10,4 +10,5 @@ urlpatterns = [
     path('information/photo/', views.PatchUserPhotoView.as_view(), name='information_photo'),
     path('information/message/', views.PatchUserStatusMsgView.as_view(), name='information_message'),
     path('friends/<int:user_id>/', views.FriendDeleteAPIView.as_view(), name='delete_friend'),
+    path('language/', views.PatchLanguageAPIView.as_view(), name='patch_language'),
 ]
