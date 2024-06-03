@@ -8,11 +8,12 @@ from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser
 
 from game.models import Game
 from user.models import Member, Friend
 
-from user.serializers import MemberSearchSerializer, MemberInfoSerializer
+from user.serializers import MemberSearchSerializer, MemberInfoSerializer, ImageUploadSerializer
 
 
 class GetGameHistory(APIView):
@@ -105,21 +106,27 @@ class GetUserInformationView(APIView):
 
 
 class PatchUserPhotoView(APIView):
-    @swagger_auto_schema(operation_description="사용자의 프로필 사진 수정 api.")
+    parser_classes = [MultiPartParser]
+    @swagger_auto_schema(
+        operation_description="사용자의 프로필 사진 수정 api.",
+        request_body=ImageUploadSerializer,
+        consumes=['multipart/form-data']
+    )
     def patch(self, request):
         # todo 로그인 유저로 수정
         user_id = 1
         member = Member.objects.get(id=user_id)
-        file = request.FILES.get('profile_img')
-        if not file:
-            return Response({'error': 'No file provided'}, status=400)
-        if member.profile_img:
-            if default_storage.exists(member.profile_img.name):
-                default_storage.delete(member.profile_img.name)
-
-        member.profile_img.save(file.name, file, save=True)
-
-        return Response({'profile_img_url': member.profile_img.url}, status=200)
+        serializer = ImageUploadSerializer(data=request.data)
+        if serializer.is_valid():
+            if member.profile_img:
+                if default_storage.exists(member.profile_img.name):
+                    default_storage.delete(member.profile_img.name)
+            profile_img = serializer.validated_data['image']
+            member.profile_img = profile_img
+            member.save()
+            return Response(status=status.HTTP_200_OK)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PatchUserStatusMsgView(APIView):
