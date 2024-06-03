@@ -18,11 +18,13 @@ from decouple import config
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Get env-variables
 OAUTH_CLIENT_ID = config("OAUTH_CLIENT_ID")
 OAUTH_CLIENT_SECRET = config("OAUTH_CLIENT_SECRET")
 OAUTH_REDIRECT_URI = config("OAUTH_REDIRECT_URI", default="http://localhost:5173/login_code/")
-OAUTH_TOKEN_URL = "https://api.intra.42.fr/oauth/token"  # delete >> env
-OAUTH_AUTHORIZATION_URL = "https://api.intra.42.fr/oauth/authorize"
+OAUTH_TOKEN_URL = config("OAUTH_TOKEN_URL")
+OAUTH_AUTHORIZATION_URL = config("OAUTH_AUTHORIZATION_URL")
+OAUTH_API_URL = config("OAUTH_API_URL")
 
 AUTH_USER_MODEL = 'user.Member'
 
