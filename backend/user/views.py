@@ -61,7 +61,7 @@ class SearchUserView(APIView):
         user_id = 1
         members = Member.objects.filter(nickname__icontains=nickname).exclude(id=user_id)[:10]
         serializer = MemberSearchSerializer(members, many=True, context={'request': request})
-        return Response({"users:": serializer.data})
+        return Response({"users": serializer.data})
 
 
 class AddFriendView(APIView):
@@ -131,17 +131,25 @@ class PatchUserPhotoView(APIView):
 
 
 class PatchUserStatusMsgView(APIView):
-    @swagger_auto_schema(operation_description="사용자의 상태 메세지 수정 api.")
+    parser_classes = [JSONParser]
+
+    @swagger_auto_schema(
+        operation_description="사용자의 상태 메세지 수정 api.",
+        request_body=StatusMsgSerializer,
+        consumes=['application/json']
+    )
     def patch(self, request):
         # todo 로그인 유저로 수정
         user_id = 1
         member = Member.objects.get(id=user_id)
-        if 'status_msg' not in request.data:
-            return Response({'error': 'No status_msg provided'}, status=400)
-        status_msg = request.data['status_msg']
-        member.status_msg = status_msg
-        member.save()
-        return Response({'message': status_msg}, status=200)
+        serializer = StatusMsgSerializer(data=request.data)
+        if serializer.is_valid():
+            status_msg = serializer.validated_data['status_msg']
+            member.status_msg = status_msg
+            member.save()
+            return Response({'message': 'StatusMsg change successfully'}, status=status.HTTP_200_OK)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class FriendDeleteAPIView(APIView):

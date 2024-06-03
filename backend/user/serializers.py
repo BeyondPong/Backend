@@ -34,10 +34,16 @@ class ImageUploadSerializer(serializers.Serializer):
 
 
 class StatusMsgSerializer(serializers.ModelSerializer):
-    status_msg = serializers.CharField(required=True)
+    status_msg = serializers.CharField(required=True, allow_null=False)
+
+    class Meta:
+        model = Member
+        fields = ['status_msg']
 
 
 class LanguageSerializer(serializers.ModelSerializer):
+    language = serializers.CharField(required=True, allow_null=False)
+
     class Meta:
         model = Member
         fields = ['language']
