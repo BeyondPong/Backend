@@ -18,11 +18,13 @@ from decouple import config
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Get env-variables
 OAUTH_CLIENT_ID = config("OAUTH_CLIENT_ID")
 OAUTH_CLIENT_SECRET = config("OAUTH_CLIENT_SECRET")
-OAUTH_REDIRECT_URI = config("OAUTH_REDIRECT_URI", default="http://localhost:8000/")
-OAUTH_TOKEN_URL = "https://api.intra.42.fr/oauth/token"
-OAUTH_AUTHORIZATION_URL = "https://api.intra.42.fr/oauth/authorize"
+OAUTH_REDIRECT_URI = config("OAUTH_REDIRECT_URI", default="http://localhost:5173/login_code/")
+OAUTH_TOKEN_URL = config("OAUTH_TOKEN_URL")
+OAUTH_AUTHORIZATION_URL = config("OAUTH_AUTHORIZATION_URL")
+OAUTH_API_URL = config("OAUTH_API_URL")
 
 AUTH_USER_MODEL = 'user.Member'
 
@@ -34,6 +36,9 @@ SECRET_KEY = "django-insecure-!^d$%0r#%r91%*)1yxp^&un_)$bag*1o&41+xj408)$qchx_gr
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+
+# for postman test(redirect by slash'/')
+APPEND_SLASH = False
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
@@ -178,5 +183,19 @@ CHANNEL_LAYERS = {
         "CONFIG": {
             "hosts": [("redis", 6379)],
         },
+    },
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',  # 필요한 경우 INFO, WARNING 등으로 변경 가능
     },
 }
