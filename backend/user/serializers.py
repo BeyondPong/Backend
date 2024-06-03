@@ -31,3 +31,13 @@ class MemberInfoSerializer(serializers.ModelSerializer):
 
 class ImageUploadSerializer(serializers.Serializer):
     profile_img = serializers.ImageField(required=True)
+
+
+class StatusMsgSerializer(serializers.ModelSerializer):
+    status_msg = serializers.CharField(required=True)
+
+
+class LanguageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Member
+        fields = ['language']

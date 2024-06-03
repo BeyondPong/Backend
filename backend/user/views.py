@@ -8,13 +8,13 @@ from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import MultiPartParser, JSONParser
 
 from game.models import Game
 from user.models import Member, Friend
 
-from user.serializers import MemberSearchSerializer, MemberInfoSerializer, ImageUploadSerializer
-
+from user.serializers import MemberSearchSerializer, MemberInfoSerializer, ImageUploadSerializer, LanguageSerializer, \
+    StatusMsgSerializer
 
 class GetGameHistory(APIView):
     @swagger_auto_schema(operation_description="사용자의 전적 내역 조회 api.")
@@ -107,6 +107,7 @@ class GetUserInformationView(APIView):
 
 class PatchUserPhotoView(APIView):
     parser_classes = [MultiPartParser]
+
     @swagger_auto_schema(
         operation_description="사용자의 프로필 사진 수정 api.",
         request_body=ImageUploadSerializer,
@@ -151,3 +152,24 @@ class FriendDeleteAPIView(APIView):
         friend = get_object_or_404(Friend, user=user, friend_id=user_id)
         friend.delete()
         return Response({'message': 'Friend deleted successfully.'}, status=200)
+
+
+class PatchLanguageAPIView(APIView):
+    parser_classes = [JSONParser]
+
+    @swagger_auto_schema(
+        operation_description="사용자의 언어 수정 api",
+        request_body=LanguageSerializer,
+        consumes=['application/json']
+    )
+    def patch(self, request):
+        # todo 로그인 유저로 수정
+        user_id = 1
+        member = Member.objects.get(id=user_id)
+        serializer = LanguageSerializer(data=request.data)
+        if serializer.is_valid():
+            member.language = serializer.validated_data['language']
+            member.save()
+            return Response({'message': 'Language changed successfully.'}, status=200)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
