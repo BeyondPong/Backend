@@ -27,3 +27,7 @@ class MemberInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Member
         fields = ['nickname', 'profile_img', 'status_msg', 'win_cnt', 'lose_cnt', 'language']
+
+
+class ImageUploadSerializer(serializers.Serializer):
+    profile_img = serializers.ImageField(required=True)
