@@ -20,7 +20,7 @@ application = ProtocolTypeRouter(
             URLRouter(
                 [
                     re_path(
-                        r"^ws/play/(?P<room_name>\w+)/$",
+                        r"^ws/play/(?P<room_name>[^/]+)/$",
                         GameConsumer.as_asgi(),
                     ),
                     re_path(
