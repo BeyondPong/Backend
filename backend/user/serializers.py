@@ -30,7 +30,7 @@ class MemberInfoSerializer(serializers.ModelSerializer):
 
 
 class ImageUploadSerializer(serializers.Serializer):
-    profile_img = serializers.IntegerField(required=False, allow_null=False)
+    profile_img = serializers.IntegerField(required=True, allow_null=False)
 
     class Meta:
         model = Member
