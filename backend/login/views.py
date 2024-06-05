@@ -1,54 +1,36 @@
 import logging
 import requests
 # import jwt
-from django.shortcuts import redirect
 from django.conf import settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from user.models import Member
+
 # just for debugging
 logger = logging.getLogger(__name__)
 
-# 1. 로그인 api
-# 	- 엑세스 토큰으로 사용자의 42 정보를 가져와서 존재하는 사람이면 로그인시키고, 없는 사람인 경우에는 회원가입 시키기
-# 	- 회원가입은 유저를 db에 저장해야함
-# 2. jwt 토큰 완벽하게 발급하기
+# 1. 로그인 api (OK)
+# 2. jwt 토큰 완벽하게 발급하기 (YET)
 # 	- jwt 토큰 내에 넣을 정보 수정
-# 3. jwt 토큰을 활용한 인증 인가 구현
+# 3. jwt 토큰을 활용한 인증 인가 구현 (YET)
 # 	- 인증 인가에 대해서 공부해보기
 
 
 """
-FE >> GET (localhost:8000/login) >> BE >> redirect to authorize_url >> 42 API
+#1 <FE>
+    FE >> req(redirect to authorize_url) >> 42 API >> code >> FE
+#2 <BE: OAuth42SocialLogin>
+    FE >> POST(with code-from-42) >> BE : (localhost:8000/login/callback/)
+    BE >> POST(code and data) >> 42 API >> req(ACCESS_TOKEN) >> BE : _get_access_token()
+    BE >> GET(ACCESS_TOKEN) >> 42 API >> req(public user-info) >> BE : _get_user_info()
+    BE >> save(user-info) or pass(already exist) >> DB : _save_db()
+    BE >> jwt(user-info) >> FE
 """
 
 
-class OAuthLoginView(APIView):
-    def get(self, request):
-        request_data = {
-            "client_id": settings.OAUTH_CLIENT_ID,
-            "redirect_uri": settings.OAUTH_REDIRECT_URI,
-            "response_type": "code",
-        }
-
-        authorize_url = (
-            f"{settings.OAUTH_AUTHORIZATION_URL}?client_id={request_data['client_id']}"
-            f"&redirect_uri={request_data['redirect_uri']}&response_type={request_data['response_type']}"
-        )
-
-        return redirect(authorize_url)
-
-
-"""
-FE >> POST (with code-from-42) >> BE >> code >> 42 API
-42 API >> ACCESS_TOKEN >> BE
-BE >> ACCESS_TOKEN >> 42 API
-42 API >> public user-info >> BE >> jwt(user-info) >> FE
-"""
-
-
-class OAuth42TokenCallback(APIView):
+class OAuth42SocialLogin(APIView):
     def post(self, request):
         # get 'code' from request body
         code = request.data.get("code")
@@ -67,8 +49,12 @@ class OAuth42TokenCallback(APIView):
         if not user_info:
             return Response({"error": "Fail to fetch user info"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # TODO: Save user info or perform login logic here
+        # save user-info if not in Member-DB
+        user = self._login_or_signup(user_info)
+
         # TODO: For demonstration, we simply return the user info
+        # get jwt-token from user-info(for send FE)
+        # jwt_token =
 
         logger.debug("======= SUCCESS: for getting user-info =======")
         return Response(user_info)
@@ -108,3 +94,23 @@ class OAuth42TokenCallback(APIView):
             return None
         user_info = response.json()
         return user_info
+
+    def _login_or_signup(self, user_info):
+        email = user_info.get('email')
+        nickname = user_info.get('login')
+
+        users = Member.objects.filter(nickname=nickname)
+        if users.exists():
+            user = users.first()
+            logger.debug("========== ALREADY EXIST USER ==========")
+        else:
+            try:
+                user = Member.objects.create_user(
+                    email=email,
+                    nickname=nickname,
+                )
+                logger.debug("========== NEW USER SAVED IN DB ==========")
+            except ValueError as e:
+                logger.error(f"!!!!!!!! ERROR creating user: {e} !!!!!!!!")
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return user
