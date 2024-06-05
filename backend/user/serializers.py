@@ -30,7 +30,11 @@ class MemberInfoSerializer(serializers.ModelSerializer):
 
 
 class ImageUploadSerializer(serializers.Serializer):
-    profile_img = serializers.ImageField(required=True)
+    profile_img = serializers.IntegerField(required=True, allow_null=False)
+
+    class Meta:
+        model = Member
+        fields = ['profile_img']
 
 
 class StatusMsgSerializer(serializers.ModelSerializer):
@@ -42,7 +46,9 @@ class StatusMsgSerializer(serializers.ModelSerializer):
 
 
 class LanguageSerializer(serializers.ModelSerializer):
-    language = serializers.CharField(required=True, allow_null=False)
+    LANGUAGE_CODE = Member.LANGUAGE_CODE
+
+    language = serializers.ChoiceField(choices=LANGUAGE_CODE, required=True)
 
     class Meta:
         model = Member

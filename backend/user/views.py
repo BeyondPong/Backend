@@ -106,12 +106,12 @@ class GetUserInformationView(APIView):
 
 
 class PatchUserPhotoView(APIView):
-    parser_classes = [MultiPartParser]
+    parser_classes = [JSONParser]
 
     @swagger_auto_schema(
         operation_description="사용자의 프로필 사진 수정 api.",
         request_body=ImageUploadSerializer,
-        consumes=['multipart/form-data']
+        consumes=['application/json']
     )
     def patch(self, request):
         # todo 로그인 유저로 수정
@@ -119,13 +119,9 @@ class PatchUserPhotoView(APIView):
         member = Member.objects.get(id=user_id)
         serializer = ImageUploadSerializer(data=request.data)
         if serializer.is_valid():
-            if member.profile_img:
-                if default_storage.exists(member.profile_img.name):
-                    default_storage.delete(member.profile_img.name)
-            profile_img = serializer.validated_data['image']
-            member.profile_img = profile_img
+            member.profile_img = serializer.validated_data['profile_img']
             member.save()
-            return Response(status=status.HTTP_200_OK)
+            return Response({'message': 'Profile img changed successfully'}, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -147,7 +143,7 @@ class PatchUserStatusMsgView(APIView):
             status_msg = serializer.validated_data['status_msg']
             member.status_msg = status_msg
             member.save()
-            return Response({'message': 'StatusMsg change successfully'}, status=status.HTTP_200_OK)
+            return Response({'message': 'StatusMsg changed successfully'}, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
