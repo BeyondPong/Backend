@@ -1,3 +1,4 @@
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.forms import ValidationError
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
@@ -46,10 +47,7 @@ class Member(AbstractBaseUser, PermissionsMixin):
         ("jp", "Japanese"),
     ]
     nickname = models.CharField(max_length=20, null=False, blank=False, unique=True)
-
-    profile_img = models.ImageField(
-        upload_to="profile_images/", null=True, blank=True, default="profile_images/default_img.png"
-    )
+    profile_img = models.IntegerField(default=1, null=False, blank=False, validators=[MinValueValidator(1)])
     status_msg = models.CharField(max_length=40, null=True, blank=True)
     language = models.CharField(max_length=3, choices=LANGUAGE_CODE, default="en")
 
@@ -58,7 +56,7 @@ class Member(AbstractBaseUser, PermissionsMixin):
         unique=True,
     )
 
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=False)
     is_admin = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
