@@ -46,7 +46,9 @@ class StatusMsgSerializer(serializers.ModelSerializer):
 
 
 class LanguageSerializer(serializers.ModelSerializer):
-    language = serializers.CharField(required=True, allow_null=False)
+    LANGUAGE_CODE = Member.LANGUAGE_CODE
+
+    language = serializers.ChoiceField(choices=LANGUAGE_CODE, required=True)
 
     class Meta:
         model = Member
