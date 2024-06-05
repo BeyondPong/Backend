@@ -1,6 +1,6 @@
+import jwt
 import logging
 import requests
-# import jwt
 from django.conf import settings
 from rest_framework import status
 from rest_framework.response import Response
@@ -12,10 +12,13 @@ from user.models import Member
 logger = logging.getLogger(__name__)
 
 # 1. 로그인 api (OK)
-# 2. jwt 토큰 완벽하게 발급하기 (YET)
-# 	- jwt 토큰 내에 넣을 정보 수정
-# 3. jwt 토큰을 활용한 인증 인가 구현 (YET)
+# 2. jwt 토큰 완벽하게 발급하기 (OK)
+# 	- jwt 토큰 내에 넣을 정보 수정 및 공부
+#   - jwt.io에 넣어서 확인 및 admin계정에 추가된 내용 확인
+# 3. TODO jwt 토큰을 활용한 인증 인가 구현 (YET)
 # 	- 인증 인가에 대해서 공부해보기
+# 4. TODO 2fa 인증 요청에 대한 응답 구현 (YET)
+# 5. TODO 2fa 인증 코드에 대한 응답 구현 (YET)
 
 
 """
@@ -51,13 +54,16 @@ class OAuth42SocialLogin(APIView):
 
         # save user-info if not in Member-DB
         user = self._login_or_signup(user_info)
+        if isinstance(user, Response):
+            return user
 
-        # TODO: For demonstration, we simply return the user info
         # get jwt-token from user-info(for send FE)
-        # jwt_token =
+        jwt_token = self._create_jwt_token(user)
+        if not jwt_token:
+            return Response({"error": "Fail to create jwt token"}, status=status.HTTP_400_BAD_REQUEST)
 
         logger.debug("======= SUCCESS: for getting user-info =======")
-        return Response(user_info)
+        return Response({"token": jwt_token})
 
     # only used in class
     def _get_access_token(self, code):
@@ -114,3 +120,17 @@ class OAuth42SocialLogin(APIView):
                 logger.error(f"!!!!!!!! ERROR creating user: {e} !!!!!!!!")
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return user
+
+    def _create_jwt_token(self, user):
+        payload = {
+            "nickname": user.nickname,
+            "email": user.email,
+            "2fa": "false",
+        }
+        try:
+            jwt_token = jwt.encode(payload, settings.OAUTH_CLIENT_SECRET, algorithm="HS256")
+            logger.debug("========== CREATE JWT TOKEN ==========")
+            return jwt_token
+        except Exception as e:
+            logger.error(f"!!!!!!!! ERROR creating jwt token: {e} !!!!!!!!")
+            return None
