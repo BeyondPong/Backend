@@ -1,40 +1,27 @@
 import json
-import secrets
-import uuid
-
+from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from .utils import generate_room_name, redis_client
 
 
 class GameConsumer(AsyncWebsocketConsumer):
-    # 참여자 수를 추적하는 딕셔너리(키-값)
-    room_participants = {}
-    room_score = {}
-
     async def connect(self):
-        initial_data = await self.receive_json()
-        game_type = initial_data("game_type")
-        nickname = initial_data("nickname")
+        # initial_data = await self.receive_json()
+        # nickname = initial_data("nickname")
 
-        if game_type == "local":
-            self.room_name = f"localroom_{uuid.uuid4()}"
-            player_key = "player"
-        else:
-            self.room_name = self.generate_room_name()
-            player_key = nickname
-
+        self.room_name = await sync_to_async(
+            generate_room_name
+        )()  # 비동기 실행으로 변경
         self.room_group_name = f"game_room_{self.room_name}"
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
-        # 참여자 수 및 점수 초기화
-        GameConsumer.room_participants.setdefault(self.room_name, 0)
-        GameConsumer.room_participants[self.room_name] += 1
-
-        GameConsumer.room_score.setdefault(self.room_name, {})
-        GameConsumer.room_score[self.room_name][player_key] = 0
+        # Redis를 사용하여 참여자 수 관리
+        await self.manage_participants(self.room_name, increase=True)
 
         # 참여자 수가 2명이 되면 모든 클라이언트에게 게임 시작 알림
-        if GameConsumer.room_participants[self.room_name] == 2:
+        participants = await sync_to_async(redis_client.get)(f"room_{self.room_name}")
+        if int(participants) == 2:
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -46,12 +33,8 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
-        # 참여자 수 감소
-        if self.room_name in GameConsumer.room_participants:
-            GameConsumer.room_participants[self.room_name] -= 1
-            # 방에 더 이상 참여자가 없으면 딕셔너리에서 제거
-            if GameConsumer.room_participants[self.room_name] == 0:
-                del GameConsumer.room_participants[self.room_name]
+        # Redis를 사용하여 참여자 수 감소
+        await self.manage_participants(self.room_name, increase=False)
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -89,29 +72,20 @@ class GameConsumer(AsyncWebsocketConsumer):
         text_data = await self.receive()
         return json.loads(text_data)
 
-    def generate_room_name(self):
-        # 방 번호를 임의로 생성하거나 대기 중인 방을 찾습니다.
-        if not GameConsumer.room_participants or all(
-            GameConsumer.room_participants[r] == 2
-            for r in GameConsumer.room_participants
-        ):
-            return secrets.token_urlsafe(8)
+    async def manage_participants(self, room_name, increase=True):
+        key = f"room_{room_name}"
+        current_count = int(redis_client.get(key) or 0)
+        if increase:
+            redis_client.set(key, current_count + 1)
         else:
-            return next(
-                r
-                for r in GameConsumer.room_participants
-                if GameConsumer.room_participants[r] < 2
-            )
+            if current_count > 0:
+                redis_client.set(key, current_count - 1)
+            if current_count == 1:
+                redis_client.delete(key)  # 마지막 사용자가 나가면 키 삭제
 
     async def start_game(self, event):
         message = event["message"]
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "send_message_to_group",
-                "message": message,
-            },
-        )
+        await self.send(text_data=json.dumps({"message": message}))
 
     async def send_message_to_group(self, event):
         message = event["message"]
