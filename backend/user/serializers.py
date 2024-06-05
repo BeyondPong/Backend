@@ -30,7 +30,11 @@ class MemberInfoSerializer(serializers.ModelSerializer):
 
 
 class ImageUploadSerializer(serializers.Serializer):
-    profile_img = serializers.ImageField(required=True)
+    profile_img = serializers.IntegerField(required=False, allow_null=False)
+
+    class Meta:
+        model = Member
+        fields = ['profile_img']
 
 
 class StatusMsgSerializer(serializers.ModelSerializer):
