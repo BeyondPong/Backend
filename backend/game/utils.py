@@ -1,33 +1,51 @@
 import logging
 import uuid
-import redis
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
-# Redis 연결 설정
-redis_client = redis.Redis(host="redis", port=6379, db=0)
+
+
+def list_rooms():
+    rooms = cache.get("rooms", {})
+    return rooms
+
+
+def print_rooms():
+    rooms = list_rooms()
+    for room_name, count in rooms.items():
+        logger.debug(f"Room: {room_name}, Participants: {count}")
 
 
 def generate_room_name():
-    rooms = redis_client.keys("room_*")
-    for room_key in rooms:
-        # count = int(redis_client.get(room_key))
-        count = get_room_count(room_key)
-        if count is not None and count < 2:
-            redis_client.set(room_key, count + 1)
-            return room_key.decode("utf-8").split("_")[1]  # UUID 전체 반환
+    rooms = cache.get("rooms", {})
+    print_rooms()
+    for room_name, count in rooms.items():
+        if count == 1:
+            rooms[room_name] = 2
+            cache.set("rooms", rooms)
+            return room_name
 
     new_room_name = str(uuid.uuid4())
-    redis_client.set(f"room_{new_room_name}", 1)  # 참가자가 1명인 새로운 방 생성
+    rooms[new_room_name] = 1
+    cache.set("rooms", rooms)
     return new_room_name
 
 
-def get_room_count(room_key):
-    try:
-        room_count = redis_client.get(room_key.decode("utf-8"))
-        if room_count is not None:
-            return int(room_count)
+def manage_participants(room_name, increase=None, query=False):
+    rooms = cache.get("rooms", {})
+    if query:
+        return rooms.get(room_name, 0)
+
+    if room_name in rooms:
+        if increase:
+            rooms[room_name] = rooms.get(room_name, 0) + 1
         else:
-            return None
-    except ValueError:
-        logger.error(f"Data type error: Key {room_key} holds non-integer value")
-        return None
+            if rooms[room_name] > 1:
+                rooms[room_name] -= 1
+            else:
+                del rooms[room_name]  # 마지막 사용자가 나가면 방 삭제
+    else:
+        if increase:
+            rooms[room_name] = 1  # 새 방 생성
+    cache.set("rooms", rooms)
+    return rooms.get(room_name, 0)

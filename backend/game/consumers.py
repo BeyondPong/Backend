@@ -1,7 +1,7 @@
 import json
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
-from .utils import generate_room_name, redis_client
+from .utils import generate_room_name, manage_participants
 
 
 class GameConsumer(AsyncWebsocketConsumer):
@@ -9,19 +9,19 @@ class GameConsumer(AsyncWebsocketConsumer):
         # initial_data = await self.receive_json()
         # nickname = initial_data("nickname")
 
-        self.room_name = await sync_to_async(
-            generate_room_name
-        )()  # 비동기 실행으로 변경
+        self.room_name = await sync_to_async(generate_room_name)()
         self.room_group_name = f"game_room_{self.room_name}"
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
-        # Redis를 사용하여 참여자 수 관리
-        await self.manage_participants(self.room_name, increase=True)
+        await sync_to_async(manage_participants)(self.room_name, increase=True)
 
         # 참여자 수가 2명이 되면 모든 클라이언트에게 게임 시작 알림
-        participants = await sync_to_async(redis_client.get)(f"room_{self.room_name}")
-        if int(participants) == 2:
+        participants = await sync_to_async(manage_participants)(
+            self.room_name, query=True
+        )
+
+        if participants == 2:
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -32,9 +32,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-
-        # Redis를 사용하여 참여자 수 감소
-        await self.manage_participants(self.room_name, increase=False)
+        await sync_to_async(manage_participants)(self.room_name, increase=False)
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -72,16 +70,16 @@ class GameConsumer(AsyncWebsocketConsumer):
         text_data = await self.receive()
         return json.loads(text_data)
 
-    async def manage_participants(self, room_name, increase=True):
-        key = f"room_{room_name}"
-        current_count = int(redis_client.get(key) or 0)
-        if increase:
-            redis_client.set(key, current_count + 1)
-        else:
-            if current_count > 0:
-                redis_client.set(key, current_count - 1)
-            if current_count == 1:
-                redis_client.delete(key)  # 마지막 사용자가 나가면 키 삭제
+    # async def manage_participants(self, room_name, increase=True):
+    #     key = f"room_{room_name}"
+    #     current_count = int(redis_client.get(key) or 0)
+    #     if increase:
+    #         redis_client.set(key, current_count + 1)
+    #     else:
+    #         if current_count > 0:
+    #             redis_client.set(key, current_count - 1)
+    #         if current_count == 1:
+    #             redis_client.delete(key)  # 마지막 사용자가 나가면 키 삭제
 
     async def start_game(self, event):
         message = event["message"]
