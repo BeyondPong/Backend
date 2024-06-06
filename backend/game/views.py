@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from game.serializers import GameResultSerializer
 
-# from .utils import generate_room_name
+from .utils import generate_room_name
 
 redis_client = redis.Redis(host="redis", port=6379, db=0)
 
@@ -39,19 +39,5 @@ class GameResultView(APIView):
 
 class GetRoomNameView(APIView):
     def get(self, request):
-        rooms = redis_client.keys("*")
-        room_found = False
-
-        # 참여자가 1명인 방 찾기
-        for room in rooms:
-            if int(redis_client.get(room.decode("utf-8"))) == 1:
-                room_name = room.decode("utf-8")
-                redis_client.set(room_name, 2)  # 참여자 수 2로 설정
-                room_found = True
-                break
-
-        if not room_found:
-            room_name = str(uuid.uuid4())
-            redis_client.set(room_name, 1)
-
+        room_name = generate_room_name()
         return Response({"room_name": room_name})
