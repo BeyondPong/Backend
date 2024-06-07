@@ -1,20 +1,6 @@
 import logging
 import secrets
-import uuid
 from django.core.cache import cache
-
-logger = logging.getLogger(__name__)
-
-
-def list_rooms():
-    rooms = cache.get("rooms", {})
-    return rooms
-
-
-def print_rooms():
-    rooms = list_rooms()
-    for room_name, count in rooms.items():
-        logger.debug(f"Room: {room_name}, Participants: {count}")
 
 
 def generate_room_name():

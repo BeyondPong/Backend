@@ -1,11 +1,8 @@
 import json
-import logging
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from .utils import generate_room_name, manage_participants
-
-logger = logging.getLogger(__name__)
 
 
 class GameConsumer(AsyncWebsocketConsumer):
@@ -17,13 +14,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.room_group_name = f"game_room_{self.room_name}"
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
-
         await self.accept()
 
         participants = await sync_to_async(manage_participants)(
             self.room_name, increase=True
         )
-
         if participants == 2:
             await self.channel_layer.group_send(
                 self.room_group_name,
@@ -72,17 +67,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         # 클라이언트로부터 JSON 메시지 받기
         text_data = await self.receive()
         return json.loads(text_data)
-
-    # async def manage_participants(self, room_name, increase=True):
-    #     key = f"room_{room_name}"
-    #     current_count = int(redis_client.get(key) or 0)
-    #     if increase:
-    #         redis_client.set(key, current_count + 1)
-    #     else:
-    #         if current_count > 0:
-    #             redis_client.set(key, current_count - 1)
-    #         if current_count == 1:
-    #             redis_client.delete(key)  # 마지막 사용자가 나가면 키 삭제
 
     async def start_game(self, event):
         message = event["message"]
