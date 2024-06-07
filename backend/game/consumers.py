@@ -1,7 +1,11 @@
 import json
+import logging
+
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from .utils import generate_room_name, manage_participants
+
+logger = logging.getLogger(__name__)
 
 
 class GameConsumer(AsyncWebsocketConsumer):
@@ -11,28 +15,27 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         self.room_name = await sync_to_async(generate_room_name)()
         self.room_group_name = f"game_room_{self.room_name}"
+
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+
         await self.accept()
 
-        await sync_to_async(manage_participants)(self.room_name, increase=True)
-
-        # 참여자 수가 2명이 되면 모든 클라이언트에게 게임 시작 알림
         participants = await sync_to_async(manage_participants)(
-            self.room_name, query=True
+            self.room_name, increase=True
         )
 
         if participants == 2:
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
-                    "type": "start_game",  # type은 어떤 메시지 처리함수를 호출할지 결정
+                    "type": "start_game",
                     "message": "Two players are now connected in the room.",
                 },
             )
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-        await sync_to_async(manage_participants)(self.room_name, increase=False)
+        await sync_to_async(self.manage_participants)(self.room_name, decrease=True)
 
     async def receive(self, text_data):
         data = json.loads(text_data)

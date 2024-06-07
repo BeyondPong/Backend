@@ -1,4 +1,5 @@
 import logging
+import secrets
 import uuid
 from django.core.cache import cache
 
@@ -18,34 +19,22 @@ def print_rooms():
 
 def generate_room_name():
     rooms = cache.get("rooms", {})
-    print_rooms()
-    for room_name, count in rooms.items():
-        if count == 1:
-            rooms[room_name] = 2
-            cache.set("rooms", rooms)
-            return room_name
-
-    new_room_name = str(uuid.uuid4())
-    rooms[new_room_name] = 1
-    cache.set("rooms", rooms)
-    return new_room_name
-
-
-def manage_participants(room_name, increase=None, query=False):
-    rooms = cache.get("rooms", {})
-    if query:
-        return rooms.get(room_name, 0)
-
-    if room_name in rooms:
-        if increase:
-            rooms[room_name] = rooms.get(room_name, 0) + 1
-        else:
-            if rooms[room_name] > 1:
-                rooms[room_name] -= 1
-            else:
-                del rooms[room_name]  # 마지막 사용자가 나가면 방 삭제
+    if not rooms or all(rooms[r] == 2 for r in rooms):
+        new_room_name = secrets.token_urlsafe(8)
+        rooms[new_room_name] = 0
+        cache.set("rooms", rooms)
+        return new_room_name
     else:
-        if increase:
-            rooms[room_name] = 1  # 새 방 생성
+        return next(r for r in rooms if rooms[r] < 2)
+
+
+def manage_participants(room_name, increase=False, decrease=False):
+    rooms = cache.get("rooms", {})
+    if increase:
+        rooms[room_name] += 1
+    if decrease:
+        rooms[room_name] -= 1
+        if rooms[room_name] <= 0:
+            del rooms[room_name]
     cache.set("rooms", rooms)
     return rooms.get(room_name, 0)
