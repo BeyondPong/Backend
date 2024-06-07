@@ -35,7 +35,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-        await sync_to_async(self.manage_participants)(self.room_name, decrease=True)
+        await sync_to_async(manage_participants)(self.room_name, decrease=True)
 
     async def receive(self, text_data):
         data = json.loads(text_data)
