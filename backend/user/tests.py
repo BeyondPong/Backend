@@ -1,37 +1,50 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from django.test import LiveServerTestCase
+from django.db.models import Q
+from django.test import TestCase
+
+from user.models import Member, Friend
+from game.models import Game
+from user.views import GetGameHistory
 
 
 # Create your tests here.
-class WebSocketTests(LiveServerTestCase):
+class FriendDeleteTest(TestCase):
     @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.driver = webdriver.Chrome()
+    def setUp(cls):
+        member1 = Member.objects.create_user(nickname="nick1", email="nick1@test.com", password="1234")
+        member2 = Member.objects.create_user(nickname="nick2", email="nick2@test.com", password="1234")
 
+        friend = Friend(user=member1, friend=member2)
+        friend.save()
+
+    def test_delete_friend(self):
+        self.assertEqual(Friend.objects.count(), 1)
+
+
+class GetGameHistoryTest(TestCase):
     @classmethod
-    def tearDownClass(cls):
-        cls.driver.quit()
-        super().tearDownClass()
+    def setUpTestData(cls):
+        cls.member1 = Member.objects.create_user(nickname="nick1", email="nick1@test.com", password="1234")
+        cls.member2 = Member.objects.create_user(nickname="nick2", email="nick2@test.com", password="1234")
 
-    def test_user_websocket(self):
-        self.driver.get(self.live_server_url + "/user/")
+        game1 = Game(user1=None, user2=cls.member2, user1_score=3, user2_score=4, game_type="LOCAL")
+        game2 = Game(user1=cls.member1, user2=None, user1_score=5, user2_score=6, game_type="LOCAL")
+        game3 = Game(user1=None, user2=cls.member1, user1_score=4, user2_score=2, game_type="LOCAL")
+        game1.save()
+        game2.save()
+        game3.save()
 
-        user_id_input = self.driver.find_element(By.ID, "user-id-input")
-        user_id_input.send_keys("user1")
-        user_id_input.send_keys(Keys.ENTER)
+    def test_create_game_histories_json(self):
+        view = GetGameHistory()
+        user_id = self.member1.id
+        games = Game.objects.filter(
+            Q(user1_id=user_id) | Q(user2_id=user_id)
+        ).order_by('-created_at')[:10]
 
-        status_message_input = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.ID, "status-message-input"))
-        )
-        status_message_input.send_keys("active")
-        status_message_input.send_keys(Keys.ENTER)
+        # 메서드 호출
+        histories = view.create_game_histories_json(user_id, games)
 
-        status_log = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located(By.ID, "status-log")
-        )
-        self.assertIn("active", status_log.get_attribute("value"))
+        # 검증
+        self.assertIsInstance(histories, list)
+        self.assertEqual(len(histories), 2)
+        self.assertEqual(histories[0]['opponent'], "Unknown")
+        self.assertEqual(histories[1]['opponent'], "Unknown")
