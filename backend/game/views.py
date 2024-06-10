@@ -41,5 +41,6 @@ class GameResultView(APIView):
 
 class GetRoomNameView(APIView):
     def get(self, request):
-        room_name = generate_room_name()
+        mode = request.query_params.get("mode")
+        room_name = generate_room_name(mode)
         return Response({"room_name": room_name})
