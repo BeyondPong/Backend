@@ -3,6 +3,7 @@ import logging
 import requests
 from django.conf import settings
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 # 2. jwt 토큰 완벽하게 발급하기 (OK)
 # 	- jwt 토큰 내에 넣을 정보 수정 및 공부
 #   - jwt.io에 넣어서 확인 및 admin계정에 추가된 내용 확인
-# 3. TODO jwt 토큰을 활용한 인증 인가 구현 (YET)
+# 3. jwt 토큰을 활용한 인증 인가 구현 (OK)
 # 	- 인증 인가에 대해서 공부해보기
 # 4. TODO 2fa 인증 요청에 대한 응답 구현 (YET)
 # 5. TODO 2fa 인증 코드에 대한 응답 구현 (YET)
@@ -34,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 
 class OAuth42SocialLogin(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         # get 'code' from request body
         code = request.data.get("code")
