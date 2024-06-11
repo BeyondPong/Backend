@@ -6,6 +6,7 @@ from django.db.models import Q, F
 from django.shortcuts import get_object_or_404
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, JSONParser
@@ -16,7 +17,10 @@ from user.models import Member, Friend
 from user.serializers import MemberSearchSerializer, MemberInfoSerializer, ImageUploadSerializer, LanguageSerializer, \
     StatusMsgSerializer
 
+
 class GetGameHistory(APIView):
+    permission_classes = [IsAuthenticated]
+
     @swagger_auto_schema(operation_description="사용자의 전적 내역 조회 api.")
     def get(self, request):
         # todo 이부분은 나중에 jwt Token에서 가져오는 방법으로 바꿀 예정
@@ -56,6 +60,8 @@ class GetGameHistory(APIView):
 
 
 class SearchUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
     @swagger_auto_schema(operation_description="유저 검색 결과 조회 api.")
     def get(self, request):
         nickname = request.GET.get('nickname', '')
@@ -67,6 +73,8 @@ class SearchUserView(APIView):
 
 
 class AddFriendView(APIView):
+    permission_classes = [IsAuthenticated]
+
     @swagger_auto_schema(operation_description="친구 추가 api")
     def post(self, request, user_id):
         # todo 로그인 유저로 수정
@@ -81,10 +89,12 @@ class AddFriendView(APIView):
 
 
 class GetUserInformationView(APIView):
+    permission_classes = [IsAuthenticated]
+
     @swagger_auto_schema(operation_description="사용자의 프로필 정보 조회 api")
     def get(self, request):
         user_id = 1
-        user = Member.objects.get(id=user_id)
+        user = request.user
         win_cnt = Game.objects.filter(
             (Q(user1=user) & Q(user1_score__gt=F('user2_score'))) |
             (Q(user2=user) & Q(user2_score__gt=F('user1_score')))
@@ -108,6 +118,7 @@ class GetUserInformationView(APIView):
 
 
 class PatchUserPhotoView(APIView):
+    permission_classes = [IsAuthenticated]
     parser_classes = [JSONParser]
 
     @swagger_auto_schema(
@@ -129,6 +140,7 @@ class PatchUserPhotoView(APIView):
 
 
 class PatchUserStatusMsgView(APIView):
+    permission_classes = [IsAuthenticated]
     parser_classes = [JSONParser]
 
     @swagger_auto_schema(
@@ -151,6 +163,8 @@ class PatchUserStatusMsgView(APIView):
 
 
 class FriendDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     @swagger_auto_schema(operation_description="친구 삭제 api(user_id 는 친구의 id).")
     def delete(self, request, user_id):
         # todo 사용자 정보로 수정
@@ -161,6 +175,7 @@ class FriendDeleteAPIView(APIView):
 
 
 class PatchLanguageAPIView(APIView):
+    permission_classes = [IsAuthenticated]
     parser_classes = [JSONParser]
 
     @swagger_auto_schema(

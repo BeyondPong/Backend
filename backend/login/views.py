@@ -1,54 +1,42 @@
+import jwt
 import logging
 import requests
-# import jwt
-from django.shortcuts import redirect
 from django.conf import settings
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from user.models import Member
 
 # just for debugging
 logger = logging.getLogger(__name__)
 
-# 1. 로그인 api
-# 	- 엑세스 토큰으로 사용자의 42 정보를 가져와서 존재하는 사람이면 로그인시키고, 없는 사람인 경우에는 회원가입 시키기
-# 	- 회원가입은 유저를 db에 저장해야함
-# 2. jwt 토큰 완벽하게 발급하기
-# 	- jwt 토큰 내에 넣을 정보 수정
-# 3. jwt 토큰을 활용한 인증 인가 구현
+# 1. 로그인 api (OK)
+# 2. jwt 토큰 완벽하게 발급하기 (OK)
+# 	- jwt 토큰 내에 넣을 정보 수정 및 공부
+#   - jwt.io에 넣어서 확인 및 admin계정에 추가된 내용 확인
+# 3. jwt 토큰을 활용한 인증 인가 구현 (OK)
 # 	- 인증 인가에 대해서 공부해보기
+# 4. TODO 2fa 인증 요청에 대한 응답 구현 (YET)
+# 5. TODO 2fa 인증 코드에 대한 응답 구현 (YET)
 
 
 """
-FE >> GET (localhost:8000/login) >> BE >> redirect to authorize_url >> 42 API
+#1 <FE>
+    FE >> req(redirect to authorize_url) >> 42 API >> code >> FE
+#2 <BE: OAuth42SocialLogin>
+    FE >> POST(with code-from-42) >> BE : (localhost:8000/login/callback/)
+    BE >> POST(code and data) >> 42 API >> req(ACCESS_TOKEN) >> BE : _get_access_token()
+    BE >> GET(ACCESS_TOKEN) >> 42 API >> req(public user-info) >> BE : _get_user_info()
+    BE >> save(user-info) or pass(already exist) >> DB : _save_db()
+    BE >> jwt(user-info) >> FE
 """
 
 
-class OAuthLoginView(APIView):
-    def get(self, request):
-        request_data = {
-            "client_id": settings.OAUTH_CLIENT_ID,
-            "redirect_uri": settings.OAUTH_REDIRECT_URI,
-            "response_type": "code",
-        }
+class OAuth42SocialLogin(APIView):
+    permission_classes = [AllowAny]
 
-        authorize_url = (
-            f"{settings.OAUTH_AUTHORIZATION_URL}?client_id={request_data['client_id']}"
-            f"&redirect_uri={request_data['redirect_uri']}&response_type={request_data['response_type']}"
-        )
-
-        return redirect(authorize_url)
-
-
-"""
-FE >> POST (with code-from-42) >> BE >> code >> 42 API
-42 API >> ACCESS_TOKEN >> BE
-BE >> ACCESS_TOKEN >> 42 API
-42 API >> public user-info >> BE >> jwt(user-info) >> FE
-"""
-
-
-class OAuth42TokenCallback(APIView):
     def post(self, request):
         # get 'code' from request body
         code = request.data.get("code")
@@ -67,11 +55,18 @@ class OAuth42TokenCallback(APIView):
         if not user_info:
             return Response({"error": "Fail to fetch user info"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # TODO: Save user info or perform login logic here
-        # TODO: For demonstration, we simply return the user info
+        # save user-info if not in Member-DB
+        user = self._login_or_signup(user_info)
+        if isinstance(user, Response):
+            return user
+
+        # get jwt-token from user-info(for send FE)
+        jwt_token = self._create_jwt_token(user)
+        if not jwt_token:
+            return Response({"error": "Fail to create jwt token"}, status=status.HTTP_400_BAD_REQUEST)
 
         logger.debug("======= SUCCESS: for getting user-info =======")
-        return Response(user_info)
+        return Response({"token": jwt_token})
 
     # only used in class
     def _get_access_token(self, code):
@@ -108,3 +103,37 @@ class OAuth42TokenCallback(APIView):
             return None
         user_info = response.json()
         return user_info
+
+    def _login_or_signup(self, user_info):
+        email = user_info.get('email')
+        nickname = user_info.get('login')
+
+        users = Member.objects.filter(nickname=nickname)
+        if users.exists():
+            user = users.first()
+            logger.debug("========== ALREADY EXIST USER ==========")
+        else:
+            try:
+                user = Member.objects.create_user(
+                    email=email,
+                    nickname=nickname,
+                )
+                logger.debug("========== NEW USER SAVED IN DB ==========")
+            except ValueError as e:
+                logger.error(f"!!!!!!!! ERROR creating user: {e} !!!!!!!!")
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return user
+
+    def _create_jwt_token(self, user):
+        payload = {
+            "nickname": user.nickname,
+            "email": user.email,
+            "2fa": "false",
+        }
+        try:
+            jwt_token = jwt.encode(payload, settings.OAUTH_CLIENT_SECRET, algorithm="HS256")
+            logger.debug("========== CREATE JWT TOKEN ==========")
+            return jwt_token
+        except Exception as e:
+            logger.error(f"!!!!!!!! ERROR creating jwt token: {e} !!!!!!!!")
+            return None
