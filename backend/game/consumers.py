@@ -30,29 +30,21 @@ class GameConsumer(AsyncWebsocketConsumer):
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
 
     async def receive(self, text_data):
-        data = json.loads(text_data)
-        action = data["type"]
+        print("여기는 receive 함수")
+        # data = json.loads(text_data)
+        # action = data["type"]
+        #
+        # if action == "start_game":
+        #     game_width = data["width"]
+        #     game_height = data["height"]
+        #     logger.debug(f"width is {game_width}, height is {game_height}")
 
-        if action == "start_game":
-            participants = await sync_to_async(manage_participants)(
-                self.room_name, increase=False
-            )
-            max_participants = 2 if self.mode == "REMOTE" else 4
-            if participants == max_participants:
-                await self.channel_layer.group_send(
-                    self.room_group_name,
-                    {
-                        "type": "start_game",
-                        "message": f"{max_participants} players are now connected in the room.",
-                    },
-                )
+        # if action == "start_game":
+        #     # 프론트에서 window의 width, height 받음
+        #     game_width = data["width"]
+        #     game_height = data["height"]
+        #     self.update_game_settings(game_width, game_height)
 
-    #
-    #     if action == "start_game":
-    #         # 프론트에서 window의 width, height 받음
-    #         game_width = data["width"]
-    #         game_height = data["height"]
-    #         self.update_game_settings(game_width, game_height)
     #
     #     if action == "move_paddle":
     #         paddle_id = data["paddle_id"]

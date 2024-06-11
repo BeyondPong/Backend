@@ -16,11 +16,18 @@ def generate_room_name(mode):
         cache.set("rooms", rooms)
         return new_room_name
     else:
-        return next(
-            r
-            for r in rooms
-            if rooms[r]["count"] < rooms[r]["max"] and rooms[r]["mode"] == mode
-        )
+        try:
+            return next(
+                r
+                for r in rooms
+                if rooms[r]["count"] < rooms[r]["max"] and rooms[r]["mode"] == mode
+            )
+        except StopIteration:
+            # 모든 방이 꽉 찼거나, 조건에 맞는 방이 없는 경우 새로운 방 생성
+            new_room_name = secrets.token_urlsafe(8)
+            rooms[new_room_name] = {"count": 0, "max": max_participants, "mode": mode}
+            cache.set("rooms", rooms)
+            return new_room_name
 
 
 def manage_participants(room_name, increase=False, decrease=False):
