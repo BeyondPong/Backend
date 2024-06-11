@@ -1,8 +1,4 @@
 # Create your views here.
-import secrets
-import uuid
-
-import redis
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.parsers import JSONParser
@@ -10,10 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from game.serializers import GameResultSerializer
-
 from .utils import generate_room_name
-
-redis_client = redis.Redis(host="redis", port=6379, db=0)
 
 
 class GameResultView(APIView):
