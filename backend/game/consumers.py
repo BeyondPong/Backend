@@ -1,6 +1,5 @@
 import json
 import logging
-import urllib
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
