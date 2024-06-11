@@ -23,8 +23,7 @@ class GetGameHistory(APIView):
 
     @swagger_auto_schema(operation_description="사용자의 전적 내역 조회 api.")
     def get(self, request):
-        # todo 이부분은 나중에 jwt Token에서 가져오는 방법으로 바꿀 예정
-        user_id = 1
+        user_id = request.user.id
         games = Game.objects.filter(
             Q(user1_id=user_id) | Q(user2_id=user_id)
         ).order_by('-created_at')[:10]
@@ -65,8 +64,7 @@ class SearchUserView(APIView):
     @swagger_auto_schema(operation_description="유저 검색 결과 조회 api.")
     def get(self, request):
         nickname = request.GET.get('nickname', '')
-        # todo 로그인 유저로 수정
-        user_id = 1
+        user_id = request.user.id
         members = Member.objects.filter(nickname__icontains=nickname).exclude(id=user_id)[:10]
         serializer = MemberSearchSerializer(members, many=True, context={'request': request})
         return Response({"users": serializer.data})
@@ -77,8 +75,7 @@ class AddFriendView(APIView):
 
     @swagger_auto_schema(operation_description="친구 추가 api")
     def post(self, request, user_id):
-        # todo 로그인 유저로 수정
-        user = Member.objects.get(id=1)
+        user = request.user
         friend_member = get_object_or_404(Member, pk=user_id)
         if user.friends.filter(Q(user=user) & Q(friend=friend_member)).exists():
             return Response({'message': '이미 친구 입니다.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -93,7 +90,6 @@ class GetUserInformationView(APIView):
 
     @swagger_auto_schema(operation_description="사용자의 프로필 정보 조회 api")
     def get(self, request):
-        user_id = 1
         user = request.user
         win_cnt = Game.objects.filter(
             (Q(user1=user) & Q(user1_score__gt=F('user2_score'))) |
@@ -127,8 +123,7 @@ class PatchUserPhotoView(APIView):
         consumes=['application/json']
     )
     def patch(self, request):
-        # todo 로그인 유저로 수정
-        user_id = 1
+        user_id = request.user.id
         member = Member.objects.get(id=user_id)
         serializer = ImageUploadSerializer(data=request.data)
         if serializer.is_valid():
@@ -149,8 +144,7 @@ class PatchUserStatusMsgView(APIView):
         consumes=['application/json']
     )
     def patch(self, request):
-        # todo 로그인 유저로 수정
-        user_id = 1
+        user_id = request.user.id
         member = Member.objects.get(id=user_id)
         serializer = StatusMsgSerializer(data=request.data)
         if serializer.is_valid():
@@ -167,8 +161,7 @@ class FriendDeleteAPIView(APIView):
 
     @swagger_auto_schema(operation_description="친구 삭제 api(user_id 는 친구의 id).")
     def delete(self, request, user_id):
-        # todo 사용자 정보로 수정
-        user = Member.objects.get(id=1)
+        user = request.user
         friend = get_object_or_404(Friend, user=user, friend_id=user_id)
         friend.delete()
         return Response({'message': 'Friend deleted successfully.'}, status=200)
@@ -184,8 +177,7 @@ class PatchLanguageAPIView(APIView):
         consumes=['application/json']
     )
     def patch(self, request):
-        # todo 로그인 유저로 수정
-        user_id = 1
+        user_id = request.user.id
         member = Member.objects.get(id=user_id)
         serializer = LanguageSerializer(data=request.data)
         if serializer.is_valid():
