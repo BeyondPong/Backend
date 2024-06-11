@@ -12,11 +12,9 @@ logger = logging.getLogger(__name__)
 
 class JWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
-        # /admin 및 / 경로는 JWT 인증을 건너뜁니다.
-        if request.path.startswith('/admin') or request.path == '/':
-            return None
-        # login 뷰틑 JWT 인증을 건너뜁니다.
-        if request.path in ["/login/oauth/", "/another/path/to/skip/"]:
+        # except backend-local-home, admin, login
+        if request.path.startswith('/admin') or request.path == '/' or request.path == '/login/oauth/':
+            logger.debug(f"========== Skipping JWT authentication for path: {request.path} ==========")
             return None
 
         logger.debug("========== PROCESS REQUEST ==========")
