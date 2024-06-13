@@ -7,13 +7,16 @@ from .utils import generate_room_name, manage_participants
 
 logger = logging.getLogger(__name__)
 
+grid = 15
+paddle_width = grid * 6
+ball_speed = 6
+paddle_speed = 6
+
 
 class GameConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        # initial_data = await self.receive_json()
-        # nickname = initial_data("nickname")
-
         self.mode = self.scope["url_route"]["kwargs"]["mode"]
+        self.nickname = self.scope["url_route"]["kwargs"]["nickname"]
         self.room_name = await sync_to_async(generate_room_name)(self.mode)
         self.room_group_name = f"game_room_{self.room_name}"
 
@@ -29,107 +32,161 @@ class GameConsumer(AsyncWebsocketConsumer):
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
 
     async def receive(self, text_data):
-        print("여기는 receive 함수")
-        # data = json.loads(text_data)
-        # action = data["type"]
-        #
-        # if action == "start_game":
-        #     game_width = data["width"]
-        #     game_height = data["height"]
-        #     logger.debug(f"width is {game_width}, height is {game_height}")
+        data = json.loads(text_data)
+        action = data["type"]
 
-        # if action == "start_game":
-        #     # 프론트에서 window의 width, height 받음
-        #     game_width = data["width"]
-        #     game_height = data["height"]
-        #     self.update_game_settings(game_width, game_height)
+        if action == "start_game":
+            # 프론트에서 window의 width, height 받음
+            game_width = data["width"]
+            game_height = data["height"]
+            self.game_settings(game_width, game_height)
 
-    #
-    #     if action == "move_paddle":
-    #         paddle_id = data["paddle_id"]
-    #         new_position = data["position"]
-    #         # 게임 룰에 따라 위치를 조정하거나, 유효성 검사를 수행할 수 있습니다.
-    #         # 게임 시작할 때, 프론트 쪽에서 게임 시작 시점의 가로 길이를 보내준다.
-    #         updated_x_position = self.update_paddle_position(paddle_id, new_position)
-    #
-    #         # 변경된 패들 위치를 모든 클라이언트에게 브로드캐스트
-    #         await self.channel_layer.group_send(
-    #             self.room_group_name,  # 이는 연결된 모든 클라이언트 그룹을 가리킵니다.
-    #             {
-    #                 "type": "paddle_position",
-    #                 "paddle_id": paddle_id,
-    #                 "position": updated_x_position,
-    #             },
-    #         )
-    #     if action == "update_score":
-    #         player_id = data["player_id"]
-    #         score = data["score"]
-    #         self.update_score(player_id, score)
-    #
-    # async def receive_json(self, **kwargs):
-    #     # 클라이언트로부터 JSON 메시지 받기
-    #     text_data = await self.receive()
-    #     return json.loads(text_data)
-    #
-    # async def start_game(self, event):
-    #     message = event["message"]
-    #     await self.send(text_data=json.dumps({"message": message}))
-    #
-    # async def send_message_to_group(self, event):
-    #     message = event["message"]
-    #     await self.send(
-    #         text_data=json.dumps(
-    #             {
-    #                 "message": message,
-    #             }
-    #         )
-    #     )
-    #
-    # async def update_score(self, player_id, score):
-    #     if self.room_name in GameConsumer.room_score:
-    #         GameConsumer.room_score[self.room_name][player_id] = score
-    #
-    #     await self.channel_layer.group_send(
-    #         self.room_group_name,
-    #         {
-    #             "type": "broadcast_score",
-    #             "score": GameConsumer.room_score[self.room_name],
-    #         },
-    #     )
-    #
-    # async def broadcast_score(self, event):
-    #     scores = event["scores"]
-    #     await self.send(
-    #         text_data=json.dumps({"action": "update_score", "scores": scores})
-    #     )
-    #
-    # async def paddle_position(self, event):
-    #     # 클라이언트로 변경된 패들 위치 정보를 보냅니다.
-    #     await self.send(
-    #         text_data=json.dumps(
-    #             {
-    #                 "action": "update_paddle",
-    #                 "paddle_id": event["paddle_id"],
-    #                 "position": event["position"],
-    #             }
-    #         )
-    #     )
-    #
-    # async def update_game_settings(self, game_width, game_height):
-    #     self.game_width = game_width
-    #     self.game_height = game_height
-    #     self.paddle_width = 100  # 일단 백엔드에서 패들의 너비를 100px로 설정
-    #
-    #     # 모든 패들의 초기 위치를 중앙으로 설정
-    #     initial_paddle_x = (self.game_width - self.paddle_width) / 2
-    #     self.paddle_positions = {
-    #         "player1": initial_paddle_x,
-    #         "player2": initial_paddle_x,
-    #     }
-    #
-    # async def update_paddle_position(self, paddle_id, position_x):
-    #     max_x = self.game_width - self.paddle_width
-    #     min_x = 0
-    #     new_position_x = max(min_x, min(max_x, position_x))
-    #     self.paddle_positions[f"{paddle_id}_x"] = new_position_x
-    #     return new_position_x
+        elif action == "move_ball":
+            self.update_ball_position()
+            await self.send_ball_position()
+
+        elif action == "move_paddle":
+            paddle = data["paddle"]
+            direction = data["direction"]
+            await self.move_paddle(paddle, direction)
+            await self.send_paddle_position()
+
+        elif action == "update_score":
+            player_id = data["player_id"]
+            await self.update_game_score(player_id)
+
+        elif action == "end_game":
+            await self.end_game()
+
+    async def game_settings(self, game_width, game_height):
+        self.game_width = game_width
+        self.game_height = game_height
+        self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
+        self.ball_velocity = {"x": 5, "y": 5}
+        self.paddle_width = paddle_width
+        self.max_paddle_x = self.game_width - 15 - self.paddle_width
+        self.paddles = {
+            "player1": {"x": 30, "y": self.game_height / 2 - 50},
+            "player2": {"x": self.game_width - 30, "y": self.game_height / 2 - 50},
+        }
+        self.scores = {"player1": 0, "player2": 0}
+        self.running = True
+        self.game_ended = False
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "game_start",
+                "data": {
+                    "ball_position": self.ball_position,
+                    "ball_velocity": self.ball_velocity,
+                    "paddles": self.paddles,
+                    "scores": self.scores,
+                },
+            },
+        )
+
+    async def send_ball_position(self):
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "ball_position",
+                "data": self.ball_position,
+            },
+        )
+
+    async def send_paddle_position(self):
+        await self.channel_layer.group_send(
+            self.room_group_name, {"type": "paddle_position", "data": self.paddles}
+        )
+
+    async def update_ball_position(self):
+        ball = self.ball_position
+        ball_velocity = self.ball_velocity
+        # 현재 속도에 따른 공 위치 업데이트
+        ball["x"] += ball_velocity["x"]
+        ball["y"] += ball_velocity["y"]
+
+        if ball["x"] < grid:
+            ball["x"] = grid
+            ball_velocity["x"] *= -1
+        elif ball["x"] + grid > self.game_width - grid:
+            ball["x"] = self.game_width - grid * 2
+            ball_velocity["x"] *= -1
+
+        if ball["y"] < 0:
+            await self.update_game_score("player2")
+        elif ball["y"] > self.game_height:
+            await self.update_game_score("player1")
+
+        await self.check_paddle_collision()
+
+    async def move_paddle(self, paddle, direction):
+        if direction == "left":
+            self.paddles[paddle]["x"] = max(
+                grid, self.paddles[paddle]["x"] - paddle_speed
+            )
+        elif direction == "right":
+            self.paddles[paddle]["x"] = min(
+                self.max_paddle_x, self.paddles[paddle]["x"] + paddle_speed
+            )
+
+    async def check_paddle_collision(self):
+        ball = self.ball_position
+        ball_velocity = self.ball_velocity
+        top_paddle = self.paddles["player1"]
+        bottom_paddle = self.paddles["player2"]
+
+        if (
+            ball["y"] <= top_paddle["y"] + top_paddle["height"]
+            and ball["x"] + grid > top_paddle["x"]
+            and ball["x"] < top_paddle["x"] + top_paddle["width"]
+        ):
+            ball_velocity["y"] *= -1
+            hit_pos = (ball["x"] - top_paddle["x"]) / top_paddle["width"]
+            ball_velocity["x"] = (hit_pos - 0.5) * 2 * ball_speed
+
+        if (
+            ball["y"] + grid >= bottom_paddle["y"]
+            and ball["x"] + grid > bottom_paddle["x"]
+            and ball["x"] < bottom_paddle["x"] + bottom_paddle["width"]
+        ):
+            ball_velocity["y"] *= -1
+            hit_pos = (ball["x"] - bottom_paddle["x"]) / bottom_paddle["width"]
+            ball_velocity["x"] = (hit_pos - 0.5) * 2 * ball_speed
+
+    async def update_game_score(self, player):
+        self.scores[player] += 1
+        if self.scores[player] >= 7:  # 게임 종료 조건
+            self.running = False
+            self.game_ended = True
+            await self.end_game(player)
+        else:
+            self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
+            self.ball_velocity = {"x": ball_speed, "y": ball_speed}
+
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "update_score",
+                    "data": {
+                        "scores": self.scores,
+                        "ball_position": self.ball_position,
+                        "ball_velocity": self.ball_velocity,
+                    },
+                },
+            )
+
+    async def end_game(self, winner):
+        self.running = False
+        self.game_ended = True
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "end_game",
+                "data": {
+                    "winner": winner,
+                    "scores": self.scores,
+                },
+            },
+        )
