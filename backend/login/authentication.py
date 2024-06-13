@@ -41,6 +41,7 @@ class JWTAuthentication(BaseAuthentication):
         # this method must return (user, auth) tuple-form -> DRF auto-settings to Request
         return user, jwt_token
 
+    @classmethod
     def _decode_jwt(self, jwt_token):
         try:
             payload = jwt.decode(jwt_token, settings.OAUTH_CLIENT_SECRET, algorithms=["HS256"])

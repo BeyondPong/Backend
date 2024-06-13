@@ -1,3 +1,4 @@
+from django_redis import get_redis_connection
 from rest_framework import serializers
 from .models import Member, Friend
 
@@ -49,3 +50,18 @@ class LanguageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Member
         fields = ['language']
+
+
+class FriendListSerializer(serializers.ModelSerializer):
+    is_connected = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Member
+        fields = ['is_connected', 'nickname', 'profile_img', 'status_msg']
+
+    def get_is_connected(self, obj):
+        redis_conn = get_redis_connection("default")
+        if redis_conn.sismember("login_room_users", obj.nickname):
+            return True
+        else:
+            return False

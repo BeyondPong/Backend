@@ -14,8 +14,8 @@ from rest_framework.parsers import MultiPartParser, JSONParser
 from game.models import Game
 from user.models import Member, Friend
 
-from user.serializers import MemberSearchSerializer, MemberInfoSerializer, ImageUploadSerializer, LanguageSerializer, \
-    StatusMsgSerializer
+from user.serializers import (MemberSearchSerializer, MemberInfoSerializer, ImageUploadSerializer, \
+                              LanguageSerializer, StatusMsgSerializer, FriendListSerializer)
 
 
 class GetGameHistory(APIView):
@@ -186,3 +186,16 @@ class PatchLanguageAPIView(APIView):
             return Response({'message': 'Language changed successfully.'}, status=200)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GetFriendListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="친구 목록 조회 api")
+    def get(self, request):
+        user = request.user
+        friend_nicknames = Friend.objects.filter(user=user).values_list('friend__nickname', flat=True)
+        friends = Member.objects.filter(nickname__in=friend_nicknames)
+
+        serializer = FriendListSerializer(friends, many=True)
+        return Response(serializer.data)
