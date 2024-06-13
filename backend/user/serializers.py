@@ -57,7 +57,7 @@ class FriendListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Member
-        fields = ['is_connected', 'nickname', 'profile_img', 'status_msg']
+        fields = ['id', 'is_connected', 'nickname', 'profile_img', 'status_msg']
 
     def get_is_connected(self, obj):
         redis_conn = get_redis_connection("default")
