@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser, User
 from django_redis import get_redis_connection
 
-from login.authentication import JWTAuthentication
+from login.authentication import JWTAuthentication, decode_jwt
 
 logger = logging.getLogger(__name__)
 User = get_user_model()  
@@ -54,7 +54,7 @@ class MemberConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def get_user_from_jwt(self, token_key):
         try:
-            payload = JWTAuthentication._decode_jwt(token_key)
+            payload = decode_jwt(token_key)
             if not payload:
                 return AnonymousUser()
             user = User.objects.get(nickname=payload['nickname'])

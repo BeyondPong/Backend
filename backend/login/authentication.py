@@ -10,6 +10,18 @@ from user.models import Member
 logger = logging.getLogger(__name__)
 
 
+def decode_jwt(jwt_token):
+    try:
+        payload = jwt.decode(jwt_token, settings.OAUTH_CLIENT_SECRET, algorithms=["HS256"])
+        return payload
+    except jwt.ExpiredSignatureError:
+        logger.error("========== ERROR: expired signature ==========")
+        return None
+    except jwt.InvalidTokenError:
+        logger.error("========== ERROR: invalid token(decoding) ==========")
+        return None
+
+
 class JWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
         # except backend-local-home, admin, login
@@ -25,7 +37,7 @@ class JWTAuthentication(BaseAuthentication):
             # token: {Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...(=jwt)}
             jwt_token = auth_header.split(" ")[1]
             logger.debug(f"JWT_token: {jwt_token}")
-            payload = self._decode_jwt(jwt_token)
+            payload = decode_jwt(jwt_token)
             if not payload:
                 raise AuthenticationFailed("Invalid jwt-token")
             try:
@@ -40,15 +52,3 @@ class JWTAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Invalid jwt-token-header(split)")
         # this method must return (user, auth) tuple-form -> DRF auto-settings to Request
         return user, jwt_token
-
-    @classmethod
-    def _decode_jwt(self, jwt_token):
-        try:
-            payload = jwt.decode(jwt_token, settings.OAUTH_CLIENT_SECRET, algorithms=["HS256"])
-            return payload
-        except jwt.ExpiredSignatureError:
-            logger.error("========== ERROR: expired signature ==========")
-            return None
-        except jwt.InvalidTokenError:
-            logger.error("========== ERROR: invalid token(decoding) ==========")
-            return None
