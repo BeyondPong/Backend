@@ -199,3 +199,14 @@ class GetFriendListView(APIView):
 
         serializer = FriendListSerializer(friends, many=True)
         return Response(serializer.data)
+
+
+class DeleteFriendAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="친구 삭제 api")
+    def delete(self, request, user_id):
+        user = request.user
+        friend = get_object_or_404(Friend, user=user, friend_id=user_id)
+        friend.delete()
+        return Response({'message': 'Friend deleted successfully.'}, status=200)
