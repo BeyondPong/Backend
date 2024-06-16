@@ -1,13 +1,20 @@
+import string
+from random import random
+
 import jwt
 import logging
 import requests
 from django.conf import settings
+from django.core.cache import cache
+from django.core.mail import send_mail
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from user.models import Member
+
+from .authentication import decode_jwt
 
 # just for debugging
 logger = logging.getLogger(__name__)
@@ -34,7 +41,7 @@ logger = logging.getLogger(__name__)
 """
 
 
-class OAuth42SocialLogin(APIView):
+class OAuth42SocialLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -137,3 +144,42 @@ class OAuth42SocialLogin(APIView):
         except Exception as e:
             logger.error(f"!!!!!!!! ERROR creating jwt token: {e} !!!!!!!!")
             return None
+
+
+class TwoFactorSendCodeView(APIView):
+    permission_classes = [AllowAny]     # IsAuthenticated
+
+    def post(self, request):
+        # get email from front-request-body
+        email = request.data.get("email")
+        if not email:
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # get nickname from jwt
+        payload = decode_jwt(request.data.get("token"))
+        if not payload:
+            Response({"error": "JWT token error in decode for 2fa"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = Member.objects.get(nickname=payload.get("nickname"))
+        except Member.DoesNotExist:
+            return Response({"error": "User not found from jwt-info"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # generate 2FA code and send email
+        two_fa_code = self._generate_2fa_code()
+        self._send_2fa_code_mail(email, two_fa_code)
+
+        # save 2fa code to Redis with an expiration time (5 minutes)
+        cache.set(f"2fa_{user.nickname}", two_fa_code, timeout=300)
+
+        return Response({"message": "2FA code send to your email"})
+
+    def _generate_2fa_code(self):
+        return "".join(random.choices(string.digits, k=6))
+
+    def _send_2fa_code_mail(self, email, code):
+        send_mail(
+            "PINGPONG 2FA Code",
+            f"Your 2FA code is {code}",
+            settings.DEFAULT_FROM_EMAIL,
+            [email]
+        )
