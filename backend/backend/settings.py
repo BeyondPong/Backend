@@ -44,6 +44,14 @@ APPEND_SLASH = False
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
+# for 2fa SMTP setting
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = config("EMAIL_HOST_USER")
 
 # Application definition
 
@@ -61,6 +69,9 @@ INSTALLED_APPS = [
     "game",
     "user",
     "channels",
+
+    # 2FA
+
 ]
 
 

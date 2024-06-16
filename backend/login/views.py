@@ -158,7 +158,7 @@ def find_user_from_jwt(jwt_token):
 
 
 class TwoFactorSendCodeView(APIView):
-    permission_classes = [AllowAny]     # IsAuthenticated
+    permission_classes = [IsAuthenticated]     # AllowAny (?)
 
     def post(self, request):
         # get email from front-request-body
@@ -193,7 +193,7 @@ class TwoFactorSendCodeView(APIView):
 
 
 class TwoFactorVerifyCodeView(APIView):
-    permission_classes = [AllowAny]     # IsAuthenticated
+    permission_classes = [IsAuthenticated]     # AllowAny (?)
 
     def post(self, request):
         # get verify-code
