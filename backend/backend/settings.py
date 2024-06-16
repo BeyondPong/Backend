@@ -69,9 +69,6 @@ INSTALLED_APPS = [
     "game",
     "user",
     "channels",
-
-    # 2FA
-
 ]
 
 
