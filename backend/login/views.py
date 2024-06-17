@@ -1,13 +1,20 @@
+import random
+import string
+
 import jwt
 import logging
 import requests
 from django.conf import settings
+from django.core.cache import cache
+from django.core.mail import send_mail, EmailMultiAlternatives
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from user.models import Member
+
+from .authentication import decode_jwt
 
 # just for debugging
 logger = logging.getLogger(__name__)
@@ -23,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 """
+[ 42Seoul social login flow ]
 #1 <FE>
     FE >> req(redirect to authorize_url) >> 42 API >> code >> FE
 #2 <BE: OAuth42SocialLogin>
@@ -34,7 +42,7 @@ logger = logging.getLogger(__name__)
 """
 
 
-class OAuth42SocialLogin(APIView):
+class OAuth42SocialLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -133,6 +141,125 @@ class OAuth42SocialLogin(APIView):
         try:
             jwt_token = jwt.encode(payload, settings.OAUTH_CLIENT_SECRET, algorithm="HS256")
             logger.debug("========== CREATE JWT TOKEN ==========")
+            return jwt_token
+        except Exception as e:
+            logger.error(f"!!!!!!!! ERROR creating jwt token: {e} !!!!!!!!")
+            return None
+
+
+"""
+[ Two Factor flow ]
+1. FE >> req(email) >> BE
+   BE >> send-email, save in cache(expired 3minutes) >> email
+   BE >> message(success!) >> FE
+2. FE >> req(verification_code) >> BE
+   BE >> check code from cache-code
+        1) SAME >> create_new_jwt_token >> FE
+        2) NO >> error(not delete in cache) >> FE
+"""
+
+
+def find_user_from_jwt(jwt_token):
+    if not jwt_token:
+        logger.debug("========= ERROR: NO JWT =========")
+        return None
+    payload = decode_jwt(jwt_token)
+    if not payload:
+        return None
+    try:
+        user = Member.objects.get(nickname=payload.get("nickname"))
+    except Member.DoesNotExist:
+        return None
+    return user
+
+
+class TwoFactorSendCodeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        logger.debug("========== 2FA REQUEST FOR SENDING EMAIL ==========")
+        # get email from front-request-body
+        email = request.data.get("email")
+        if not email:
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # get nickname from jwt
+        user = find_user_from_jwt(request.auth)
+        if not user:
+            return Response({"error": "User not found from jwt-info"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # generate 2FA code and send email
+        two_fa_code = self._generate_2fa_code()
+        self._send_2fa_code_mail(email, two_fa_code)
+
+        # save 2fa code to Redis with an expiration time (3 minutes)
+        cache.set(user.nickname, two_fa_code, timeout=180)
+
+        logger.debug("========== SUCCESS 2FA SENDING EMAIL ==========")
+        return Response({"message": "2FA code send to your email"})
+
+    def _generate_2fa_code(self):
+        return "".join(random.choices(string.digits, k=6))
+
+    def _send_2fa_code_mail(self, email, two_fa_code):
+        subject = "PINGPONG 2FA CODE"
+        from_email = settings.DEFAULT_FROM_EMAIL
+        to = email
+        text_content = f"Your 2FA Code is {two_fa_code}"
+        html_content = f"""
+        <html>
+            <body>
+                <h2>Your 2FA Code</h2>
+                <p>Your 2FA code is <strong>{two_fa_code}</strong></p>
+                <p>Use this code to complete your login.</p>
+                <p>Best regards,<br/><em>BeyondPong Team</em> 🎉</p>
+            </body>
+        </html>
+        """
+        msg = EmailMultiAlternatives(subject, text_content, from_email, [to])
+        msg.attach_alternative(html_content, "text/html")
+        msg.send()
+
+
+class TwoFactorVerifyCodeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        logger.debug("========== 2FA REQUEST TO VERIFY CODE ==========")
+        # get verify-code
+        verification_code = request.data.get("verification_code")
+        if not verification_code:
+            return Response({"error": "Verification code are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # get nickname from jwt
+        user = find_user_from_jwt(request.auth)
+        if not user:
+            return Response({"error": "User not found from jwt-info"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # check stored-code(from cache) with verify-code(from request-body)
+        stored_code = cache.get(user.nickname)
+        if not stored_code or stored_code != verification_code:
+            return Response({"error": "Invalid or expired 2FA code"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # delete stored-code from cache
+        cache.delete(user.nickname)
+
+        new_jwt_token = self._create_new_jwt_token(user)
+        if not new_jwt_token:
+            return Response({"error": "Fail to create new jwt token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        logger.debug("========== SUCCESS 2FA AUTHENTICATION ==========")
+        return Response({"token": new_jwt_token})
+
+    def _create_new_jwt_token(self, user):
+        payload = {
+            "nickname": user.nickname,
+            "email": user.email,
+            "2fa": "true",
+        }
+        try:
+            jwt_token = jwt.encode(payload, settings.OAUTH_CLIENT_SECRET, algorithm="HS256")
+            logger.debug("========== CREATE !!NEW!! JWT TOKEN ==========")
             return jwt_token
         except Exception as e:
             logger.error(f"!!!!!!!! ERROR creating jwt token: {e} !!!!!!!!")

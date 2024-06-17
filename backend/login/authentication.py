@@ -25,7 +25,7 @@ def decode_jwt(jwt_token):
 class JWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
         # except backend-local-home, admin, login
-        if request.path.startswith('/admin') or request.path == '/' or request.path == '/login/oauth/':
+        if request.path.startswith("/admin") or request.path == "/" or request.path == "/login/oauth/":
             logger.debug(f"========== Skipping JWT authentication for path: {request.path} ==========")
             return None
 
@@ -42,13 +42,18 @@ class JWTAuthentication(BaseAuthentication):
                 raise AuthenticationFailed("Invalid jwt-token")
             try:
                 user = Member.objects.get(nickname=payload["nickname"])
-                # request.user = user
-                # request.auth = jwt_token
                 logger.debug(f"========= Authenticated user: {user.nickname}=========")
+                # check 2fa except 2fa-view
+                if request.path.startswith("/login/two_fa/"):
+                    return user, jwt_token
+                auth_2fa = payload["2fa"]
+                if auth_2fa == "false":
+                    raise AuthenticationFailed("2FA is not authenticated")
             except Member.DoesNotExist:
                 raise AuthenticationFailed("User not found")
         except IndexError:
             # error for split-jwt token
             raise AuthenticationFailed("Invalid jwt-token-header(split)")
+
         # this method must return (user, auth) tuple-form -> DRF auto-settings to Request
         return user, jwt_token
