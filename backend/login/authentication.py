@@ -36,7 +36,6 @@ class JWTAuthentication(BaseAuthentication):
         try:
             # token: {Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...(=jwt)}
             jwt_token = auth_header.split(" ")[1]
-            logger.debug(f"JWT_token: {jwt_token}")
             payload = decode_jwt(jwt_token)
             if not payload:
                 raise AuthenticationFailed("Invalid jwt-token")
