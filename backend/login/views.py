@@ -1,5 +1,5 @@
+import random
 import string
-from random import random
 
 import jwt
 import logging
@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 """
+[ 42Seoul social login flow ]
 #1 <FE>
     FE >> req(redirect to authorize_url) >> 42 API >> code >> FE
 #2 <BE: OAuth42SocialLogin>
@@ -146,7 +147,22 @@ class OAuth42SocialLoginView(APIView):
             return None
 
 
+"""
+[ Two Factor flow ]
+1. FE >> req(email) >> BE
+   BE >> send-email, save in cache(expired 3minutes) >> email
+   BE >> message(success!) >> FE
+2. FE >> req(verification_code) >> BE
+   BE >> check code from cache-code
+        1) SAME >> create_new_jwt_token >> FE
+        2) NO >> error(not delete in cache) >> FE
+"""
+
+
 def find_user_from_jwt(jwt_token):
+    if not jwt_token:
+        logger.debug("========= ERROR: NO JWT =========")
+        return None
     payload = decode_jwt(jwt_token)
     if not payload:
         return None
@@ -158,16 +174,17 @@ def find_user_from_jwt(jwt_token):
 
 
 class TwoFactorSendCodeView(APIView):
-    permission_classes = [IsAuthenticated]     # AllowAny (?)
+    permission_classes = [AllowAny]     # AllowAny (?)
 
     def post(self, request):
+        logger.debug("========== 2FA REQUEST FOR SENDING EMAIL ==========")
         # get email from front-request-body
         email = request.data.get("email")
         if not email:
             return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         # get nickname from jwt
-        user = find_user_from_jwt(request.data.get("token"))
+        user = find_user_from_jwt(request.auth)
         if not user:
             return Response({"error": "User not found from jwt-info"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -175,9 +192,10 @@ class TwoFactorSendCodeView(APIView):
         two_fa_code = self._generate_2fa_code()
         self._send_2fa_code_mail(email, two_fa_code)
 
-        # save 2fa code to Redis with an expiration time (5 minutes)
-        cache.set(user.nickname, two_fa_code, timeout=300)
+        # save 2fa code to Redis with an expiration time (3 minutes)
+        cache.set(user.nickname, two_fa_code, timeout=180)
 
+        logger.debug("========== SUCCESS 2FA SENDING EMAIL ==========")
         return Response({"message": "2FA code send to your email"})
 
     def _generate_2fa_code(self):
@@ -193,16 +211,17 @@ class TwoFactorSendCodeView(APIView):
 
 
 class TwoFactorVerifyCodeView(APIView):
-    permission_classes = [IsAuthenticated]     # AllowAny (?)
+    permission_classes = [AllowAny]     # AllowAny (?)
 
     def post(self, request):
+        logger.debug("========== 2FA REQUEST TO VERIFY CODE ==========")
         # get verify-code
         verification_code = request.data.get("verification_code")
         if not verification_code:
             return Response({"error": "Verification code are required"}, status=status.HTTP_400_BAD_REQUEST)
 
         # get nickname from jwt
-        user = find_user_from_jwt(request.data.get("token"))
+        user = find_user_from_jwt(request.auth)
         if not user:
             return Response({"error": "User not found from jwt-info"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -218,6 +237,7 @@ class TwoFactorVerifyCodeView(APIView):
         if not new_jwt_token:
             return Response({"error": "Fail to create new jwt token"}, status=status.HTTP_400_BAD_REQUEST)
 
+        logger.debug("========== SUCCESS 2FA AUTHENTICATION ==========")
         return Response({"token": new_jwt_token})
 
     def _create_new_jwt_token(self, user):
