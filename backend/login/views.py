@@ -6,7 +6,7 @@ import logging
 import requests
 from django.conf import settings
 from django.core.cache import cache
-from django.core.mail import send_mail
+from django.core.mail import send_mail, EmailMultiAlternatives
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -174,7 +174,7 @@ def find_user_from_jwt(jwt_token):
 
 
 class TwoFactorSendCodeView(APIView):
-    permission_classes = [AllowAny]     # AllowAny (?)
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         logger.debug("========== 2FA REQUEST FOR SENDING EMAIL ==========")
@@ -201,17 +201,28 @@ class TwoFactorSendCodeView(APIView):
     def _generate_2fa_code(self):
         return "".join(random.choices(string.digits, k=6))
 
-    def _send_2fa_code_mail(self, email, code):
-        send_mail(
-            "PINGPONG 2FA Code",
-            f"Your 2FA code is {code}",
-            settings.DEFAULT_FROM_EMAIL,
-            [email]
-        )
+    def _send_2fa_code_mail(self, email, two_fa_code):
+        subject = "PINGPONG 2FA CODE"
+        from_email = settings.DEFAULT_FROM_EMAIL
+        to = email
+        text_content = f"Your 2FA Code is {two_fa_code}"
+        html_content = f"""
+        <html>
+            <body>
+                <h2>Your 2FA Code</h2>
+                <p>Your 2FA code is <strong>{two_fa_code}</strong></p>
+                <p>Use this code to complete your login.</p>
+                <p>Best regards,<br/><em>BeyondPong Team</em> 🎉</p>
+            </body>
+        </html>
+        """
+        msg = EmailMultiAlternatives(subject, text_content, from_email, [to])
+        msg.attach_alternative(html_content, "text/html")
+        msg.send()
 
 
 class TwoFactorVerifyCodeView(APIView):
-    permission_classes = [AllowAny]     # AllowAny (?)
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         logger.debug("========== 2FA REQUEST TO VERIFY CODE ==========")
