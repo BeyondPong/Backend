@@ -33,6 +33,20 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
+        max_participants = 2 if self.mode == "REMOTE" else 4
+
+        if len(current_participants) == max_participants:
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "broadcast_event",
+                    "event_type": "start_game",
+                    "data": {
+                        "message": f"{max_participants} players are online, starting game."
+                    }
+                }
+            )
+
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
@@ -89,31 +103,40 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.running = True
         self.game_ended = False
 
+        game_data = {
+            "ball_position": self.ball_position,
+            "ball_velocity": self.ball_velocity,
+            "paddles": self.paddles,
+            "scores": self.scores,
+        }
+
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                "type": "game_start",
-                "data": {
-                    "ball_position": self.ball_position,
-                    "ball_velocity": self.ball_velocity,
-                    "paddles": self.paddles,
-                    "scores": self.scores,
-                },
-            },
+                "type": "broadcast_event",
+                "event_type": "game_start",
+                "data": game_data
+            }
         )
 
     async def send_ball_position(self):
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                "type": "ball_position",
-                "data": self.ball_position,
-            },
+                "type": "broadcast_event",
+                "event_type": "ball_position",
+                "data": self.ball_position
+            }
         )
 
     async def send_paddle_position(self):
         await self.channel_layer.group_send(
-            self.room_group_name, {"type": "paddle_position", "data": self.paddles}
+            self.room_group_name,
+            {
+                "type": "broadcast_event",
+                "event_type": "paddle_position",
+                "data": self.paddles
+            }
         )
 
     async def update_ball_position(self):
@@ -186,28 +209,43 @@ class GameConsumer(AsyncWebsocketConsumer):
             self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
             self.ball_velocity = {"x": ball_speed, "y": ball_speed}
 
+            game_score = {
+                "scores": self.scores,
+                "ball_position": self.ball_position,
+                "ball_velocity": self.ball_velocity,
+            }
+
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
-                    "type": "update_score",
-                    "data": {
-                        "scores": self.scores,
-                        "ball_position": self.ball_position,
-                        "ball_velocity": self.ball_velocity,
-                    },
-                },
+                    "type": "broadcast_event",
+                    "event_type": "update_score",
+                    "data": game_score
+                }
             )
+
 
     async def end_game(self, winner):
         self.running = False
         self.game_ended = True
+
+        end_game_data = {
+            "winner": winner,
+            "scores": self.scores,
+        }
+
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                "type": "end_game",
-                "data": {
-                    "winner": winner,
-                    "scores": self.scores,
-                },
-            },
+                "type": "broadcast_event",
+                "event_type": "end_game",
+                "data": end_game_data
+            }
         )
+
+    async def broadcast_event(self, event):
+        event_type = event["event_type"]
+        await self.send(text_data=json.dumps({
+            "type": event_type,
+            "data": event["data"]
+        }))
