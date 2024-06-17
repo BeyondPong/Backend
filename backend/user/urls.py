@@ -13,4 +13,5 @@ urlpatterns = [
     path('language/', views.PatchLanguageAPIView.as_view(), name='patch_language'),
     path('friends/', views.GetFriendListView.as_view(), name='friend_list'),
     path('friends/<int:user_id>/', views.DeleteFriendAPIView.as_view(), name='delete_friend'),
+    path('withdrawal/', views.WithdrawalUserView.as_view(), name='withdrawal_user'),
 ]

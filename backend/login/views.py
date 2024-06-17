@@ -159,20 +159,6 @@ class OAuth42SocialLoginView(APIView):
 """
 
 
-def find_user_from_jwt(jwt_token):
-    if not jwt_token:
-        logger.debug("========= ERROR: NO JWT =========")
-        return None
-    payload = decode_jwt(jwt_token)
-    if not payload:
-        return None
-    try:
-        user = Member.objects.get(nickname=payload.get("nickname"))
-    except Member.DoesNotExist:
-        return None
-    return user
-
-
 class TwoFactorSendCodeView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -183,17 +169,12 @@ class TwoFactorSendCodeView(APIView):
         if not email:
             return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # get nickname from jwt
-        user = find_user_from_jwt(request.auth)
-        if not user:
-            return Response({"error": "User not found from jwt-info"}, status=status.HTTP_400_BAD_REQUEST)
-
         # generate 2FA code and send email
         two_fa_code = self._generate_2fa_code()
         self._send_2fa_code_mail(email, two_fa_code)
 
         # save 2fa code to Redis with an expiration time (3 minutes)
-        cache.set(user.nickname, two_fa_code, timeout=180)
+        cache.set(f"2fa_code_{request.user.nickname}", two_fa_code, timeout=180)
 
         logger.debug("========== SUCCESS 2FA SENDING EMAIL ==========")
         return Response({"message": "2FA code send to your email"})
@@ -231,19 +212,16 @@ class TwoFactorVerifyCodeView(APIView):
         if not verification_code:
             return Response({"error": "Verification code are required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # get nickname from jwt
-        user = find_user_from_jwt(request.auth)
-        if not user:
-            return Response({"error": "User not found from jwt-info"}, status=status.HTTP_400_BAD_REQUEST)
-
         # check stored-code(from cache) with verify-code(from request-body)
-        stored_code = cache.get(user.nickname)
+        user = request.user
+        stored_code = cache.get(f"2fa_code_{user.nickname}")
         if not stored_code or stored_code != verification_code:
             return Response({"error": "Invalid or expired 2FA code"}, status=status.HTTP_400_BAD_REQUEST)
 
         # delete stored-code from cache
-        cache.delete(user.nickname)
+        cache.delete(f"2fa_code_{user.nickname}")
 
+        # get new jwt-token
         new_jwt_token = self._create_new_jwt_token(user)
         if not new_jwt_token:
             return Response({"error": "Fail to create new jwt token"}, status=status.HTTP_400_BAD_REQUEST)

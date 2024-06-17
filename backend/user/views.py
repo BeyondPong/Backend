@@ -1,3 +1,5 @@
+import logging
+
 from django.core.files.storage import default_storage
 from django.db.models import Q, F
 
@@ -16,6 +18,9 @@ from user.models import Member, Friend
 
 from user.serializers import (MemberSearchSerializer, MemberInfoSerializer, ImageUploadSerializer, \
                               LanguageSerializer, StatusMsgSerializer, FriendListSerializer)
+
+# just for debugging
+logger = logging.getLogger(__name__)
 
 
 class GetGameHistory(APIView):
@@ -210,3 +215,12 @@ class DeleteFriendAPIView(APIView):
         friend = get_object_or_404(Friend, user=user, friend_id=user_id)
         friend.delete()
         return Response({'message': 'Friend deleted successfully.'}, status=200)
+
+
+class WithdrawalUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        request.user.delete()
+        logger.debug("======== DELETED FROM DATABASE ========")
+        return Response({"message": "User deleted successfully."}, status=status.HTTP_200_OK)
