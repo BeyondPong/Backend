@@ -34,6 +34,7 @@ class GameResultView(APIView):
 
 
 class GetRoomNameView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         mode = request.query_params.get("mode")
         room_name = generate_room_name(mode)
@@ -41,6 +42,7 @@ class GetRoomNameView(APIView):
 
 
 class CheckNicknameView(APIView):
+    permission_classes = [IsAuthenticated]
     def post(self, request):
         nickname = request.data.get("nickname")
         room_name = request.data.get("room_name")
@@ -58,4 +60,4 @@ class CheckNicknameView(APIView):
         cache.set(f"{room_name}_nicknames", current_nicknames)
 
         # 사용 가능한 경우 True 반환
-        return Response({"valid": True})
+        return Response({"valid": True, "nicknames": list(current_nicknames)})
