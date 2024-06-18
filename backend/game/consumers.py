@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from django.core.cache import cache
@@ -67,6 +68,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             game_width = data["width"]
             game_height = data["height"]
             self.game_settings(game_width, game_height)
+            await self.start_ball_movement()
 
         elif action == "move_ball":
             self.update_ball_position()
@@ -263,3 +265,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.send(
             text_data=json.dumps({"type": event_type, "data": event["data"]})
         )
+
+    async def start_ball_movement(self):
+        while self.running:
+            await self.update_ball_position()
+            await self.send_ball_position()
+            await asyncio.sleep(0.0625)  # 16 FPS
