@@ -21,21 +21,28 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.room_name = await sync_to_async(generate_room_name)(self.mode)
         self.room_group_name = f"game_room_{self.room_name}"
 
-        current_participants = cache.get(f"{self.room_name}_participants", [])
-        if not current_participants:
-            cache.set(
-                f"{self.room_name}_participants", current_participants, timeout=3600
-            )
+        participants = cache.get(
+            f"{self.room_name}_participants", {"players": [], "spectators": []}
+        )
+
+        if self.mode == "TOURNAMENT":
+            if len(participants["players"]) < 2:
+                participants["players"].append(self.nickname)
+            else:
+                participants["spectators"].append(self.nickname)
+        else:  # mode가 REMOTE면 다 player로 저장
+            participants["players"].append(self.nickname)
         # 참가자 추가
-        current_participants.append(self.nickname)
-        cache.set(f"{self.room_name}_participants", current_participants)
+        cache.set(f"{self.room_name}_participants", participants)
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
         max_participants = 2 if self.mode == "REMOTE" else 4
 
-        if len(current_participants) == max_participants:
+        if (
+            len(participants["players"]) + len(participants["spectators"])
+        ) == max_participants:
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -43,8 +50,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                     "event_type": "start_game",
                     "data": {
                         "message": f"{max_participants} players are online, starting game."
-                    }
-                }
+                    },
+                },
             )
 
     async def disconnect(self, close_code):
@@ -112,11 +119,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         await self.channel_layer.group_send(
             self.room_group_name,
-            {
-                "type": "broadcast_event",
-                "event_type": "game_start",
-                "data": game_data
-            }
+            {"type": "broadcast_event", "event_type": "game_start", "data": game_data},
         )
 
     async def send_ball_position(self):
@@ -125,8 +128,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             {
                 "type": "broadcast_event",
                 "event_type": "ball_position",
-                "data": self.ball_position
-            }
+                "data": self.ball_position,
+            },
         )
 
     async def send_paddle_position(self):
@@ -135,8 +138,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             {
                 "type": "broadcast_event",
                 "event_type": "paddle_position",
-                "data": self.paddles
-            }
+                "data": self.paddles,
+            },
         )
 
     async def update_ball_position(self):
@@ -220,10 +223,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                 {
                     "type": "broadcast_event",
                     "event_type": "update_score",
-                    "data": game_score
-                }
+                    "data": game_score,
+                },
             )
-
 
     async def end_game(self, winner):
         self.running = False
@@ -239,13 +241,12 @@ class GameConsumer(AsyncWebsocketConsumer):
             {
                 "type": "broadcast_event",
                 "event_type": "end_game",
-                "data": end_game_data
-            }
+                "data": end_game_data,
+            },
         )
 
     async def broadcast_event(self, event):
         event_type = event["event_type"]
-        await self.send(text_data=json.dumps({
-            "type": event_type,
-            "data": event["data"]
-        }))
+        await self.send(
+            text_data=json.dumps({"type": event_type, "data": event["data"]})
+        )
