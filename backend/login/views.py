@@ -6,7 +6,7 @@ import logging
 import requests
 from django.conf import settings
 from django.core.cache import cache
-from django.core.mail import send_mail, EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -14,19 +14,8 @@ from rest_framework.views import APIView
 
 from user.models import Member
 
-from .authentication import decode_jwt
-
 # just for debugging
 logger = logging.getLogger(__name__)
-
-# 1. 로그인 api (OK)
-# 2. jwt 토큰 완벽하게 발급하기 (OK)
-# 	- jwt 토큰 내에 넣을 정보 수정 및 공부
-#   - jwt.io에 넣어서 확인 및 admin계정에 추가된 내용 확인
-# 3. jwt 토큰을 활용한 인증 인가 구현 (OK)
-# 	- 인증 인가에 대해서 공부해보기
-# 4. TODO 2fa 인증 요청에 대한 응답 구현 (YET)
-# 5. TODO 2fa 인증 코드에 대한 응답 구현 (YET)
 
 
 """
@@ -64,7 +53,7 @@ class OAuth42SocialLoginView(APIView):
             return Response({"error": "Fail to fetch user info"}, status=status.HTTP_400_BAD_REQUEST)
 
         # save user-info if not in Member-DB
-        user = self._login_or_signup(user_info)
+        user, user_status = self._login_or_signup(user_info)
         if isinstance(user, Response):
             return user
 
@@ -74,7 +63,10 @@ class OAuth42SocialLoginView(APIView):
             return Response({"error": "Fail to create jwt token"}, status=status.HTTP_400_BAD_REQUEST)
 
         logger.debug("======= SUCCESS: for getting user-info =======")
-        return Response({"token": jwt_token})
+        return Response({
+            "token": jwt_token,
+            "status": user_status
+        })
 
     # only used in class
     def _get_access_token(self, code):
@@ -113,12 +105,13 @@ class OAuth42SocialLoginView(APIView):
         return user_info
 
     def _login_or_signup(self, user_info):
-        email = user_info.get('email')
-        nickname = user_info.get('login')
+        email = user_info.get("email")
+        nickname = user_info.get("login")
 
         users = Member.objects.filter(nickname=nickname)
         if users.exists():
             user = users.first()
+            user_status = "origin_user"
             logger.debug("========== ALREADY EXIST USER ==========")
         else:
             try:
@@ -126,11 +119,12 @@ class OAuth42SocialLoginView(APIView):
                     email=email,
                     nickname=nickname,
                 )
+                user_status = "new_user"
                 logger.debug("========== NEW USER SAVED IN DB ==========")
             except ValueError as e:
                 logger.error(f"!!!!!!!! ERROR creating user: {e} !!!!!!!!")
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return user
+        return user, user_status
 
     def _create_jwt_token(self, user):
         payload = {
@@ -190,7 +184,7 @@ class TwoFactorSendCodeView(APIView):
         html_content = f"""
         <html>
             <body>
-                <h2>Your 2FA Code</h2>
+                <h2>🏓PingPong! 2FA Code🏓</h2>
                 <p>Your 2FA code is <strong>{two_fa_code}</strong></p>
                 <p>Use this code to complete your login.</p>
                 <p>Best regards,<br/><em>BeyondPong Team</em> 🎉</p>
