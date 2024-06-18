@@ -35,6 +35,7 @@ class GameResultView(APIView):
 
 class GetRoomNameView(APIView):
     permission_classes = [IsAuthenticated]
+
     def get(self, request):
         mode = request.query_params.get("mode")
         room_name = generate_room_name(mode)
@@ -43,8 +44,8 @@ class GetRoomNameView(APIView):
 
 class CheckNicknameView(APIView):
     permission_classes = [IsAuthenticated]
-    def post(self, request):
-        nickname = request.data.get("nickname")
+
+    def post(self, request, nickname):
         room_name = request.data.get("room_name")
 
         # 방 내 현재 닉네임 목록을 캐시에서 가져옴
