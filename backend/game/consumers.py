@@ -91,20 +91,27 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
         self.ball_velocity = {"x": 5, "y": 5}
         self.paddle_width = paddle_width
+        self.paddle_height = grid
         self.max_paddle_x = self.game_width - 15 - self.paddle_width
-
         # 참가자 목록을 캐시에서 불러오기
-        current_paricipants = cache.get(f"{self.room_name}_participants", [])
+        current_paricipants = cache.get(
+            f"{self.room_name}_participants", {"players": [], "spectators": []}
+        )
+        players = current_paricipants["players"]
 
         self.paddles = {}
-        if len(current_paricipants) >= 2:
-            self.paddles[current_paricipants[0]] = {
-                "x": 30,
-                "y": self.game_height / 2 - 50,
+        if len(players) >= 2:
+            self.paddles[players[0]] = {  # bottom_paddle
+                "x": self.game_width / 2 - self.paddle_width / 2,
+                "y": grid * 2,
+                "width": self.paddle_width,
+                "height": grid,
             }
-            self.paddles[current_paricipants[1]] = {
-                "x": self.game_width - 30,
-                "y": self.game_height / 2 - 50,
+            self.paddles[players[1]] = {  # top_paddle
+                "x": self.game_width / 2 - self.paddle_width / 2,
+                "y": self.game_height - grid * 3,
+                "width": self.paddle_width,
+                "height": grid,
             }
         self.scores = {nickname: 0 for nickname in current_paricipants}
         self.running = True
@@ -149,7 +156,15 @@ class GameConsumer(AsyncWebsocketConsumer):
         ball["x"] += ball_velocity["x"]
         ball["y"] += ball_velocity["y"]
 
-        current_participants = cache.get(f"{self.room_name}_participants", [])
+        current_participants = cache.get(
+            f"{self.room_name}_participants", {"players": [], "spectators": []}
+        )
+        players = current_participants["players"]
+
+        if ball["y"] < grid:
+            await self.update_game_score(players[1])
+        elif ball["y"] + grid > self.game_height - grid:
+            await self.update_game_score(players[0])
 
         if ball["x"] < grid:
             ball["x"] = grid
@@ -157,11 +172,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         elif ball["x"] + grid > self.game_width - grid:
             ball["x"] = self.game_width - grid * 2
             ball_velocity["x"] *= -1
-
-        if ball["y"] < 0:
-            await self.update_game_score(current_participants[1])
-        elif ball["y"] > self.game_height:
-            await self.update_game_score(current_participants[0])
 
         await self.check_paddle_collision()
 
@@ -178,13 +188,16 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def check_paddle_collision(self):
         ball = self.ball_position
         ball_velocity = self.ball_velocity
-        current_participants = cache.get(f"{self.room_name}_participants", [])
+        current_participants = cache.get(
+            f"{self.room_name}_participants", {"players": [], "spectators": []}
+        )
+        players = current_participants["players"]
 
-        if len(current_participants) >= 2:
-            top_paddle = self.paddles[current_participants[0]]
-            bottom_paddle = self.paddles[current_participants[1]]
+        if len(players) >= 2:
+            top_paddle = self.paddles[players[0]]
+            bottom_paddle = self.paddles[players[1]]
 
-        if (
+        if (  # 위쪽 패들
             ball["y"] <= top_paddle["y"] + top_paddle["height"]
             and ball["x"] + grid > top_paddle["x"]
             and ball["x"] < top_paddle["x"] + top_paddle["width"]
