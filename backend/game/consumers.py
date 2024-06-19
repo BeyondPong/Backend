@@ -1,11 +1,18 @@
 import asyncio
 import json
 import logging
+import jwt
+
+from channels.db import database_sync_to_async
 from django.core.cache import cache
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from .utils import generate_room_name, manage_participants
+from login.authentication import JWTAuthentication, decode_jwt
+from django.contrib.auth.models import AnonymousUser
+
+from user.models import Member
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +24,14 @@ paddle_speed = 6
 
 class GameConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+        # JWT 토큰 확인 및 사용자 인증
+        token_key = self.scope['query_string'].decode().split('=')[1]
+        self.scope['user'] = await self.get_user_from_jwt(token_key)
+
+        if not self.scope["user"].is_authenticated:
+            logger.debug("User is not authenticated")
+            return
+
         self.mode = self.scope["url_route"]["kwargs"]["mode"]
         self.nickname = self.scope["url_route"]["kwargs"]["nickname"]
         self.room_name = await sync_to_async(generate_room_name)(self.mode)
@@ -53,6 +68,26 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
+        await sync_to_async(self.remove_nickname_from_cache)()
+
+    @database_sync_to_async
+    def get_user_from_jwt(self, token_key):
+        try:
+            payload = decode_jwt(token_key)
+            if not payload:
+                return AnonymousUser()
+            user = Member.objects.get(nickname=payload['nickname'])
+            logger.debug(f"JWT user: {user}")
+            return user
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, Member.DoesNotExist):
+            return AnonymousUser()
+
+    def remove_nickname_from_cache(self):
+        current_nicknames = cache.get(f"{self.room_name}_nicknames", set())
+        nickname = self.scope['user'].nickname
+        logger.debug("nickname : %s", nickname)
+        current_nicknames = {n for n in current_nicknames if n[1] != nickname}
+        cache.set(f"{self.room_name}_nicknames", current_nicknames)
 
     async def receive(self, text_data):
         data = json.loads(text_data)
