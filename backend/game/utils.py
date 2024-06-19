@@ -32,11 +32,26 @@ def generate_room_name(mode):
 
 def manage_participants(room_name, increase=False, decrease=False):
     rooms = cache.get("rooms", {})
-    if increase:
-        rooms[room_name]["count"] += 1
-    if decrease:
-        rooms[room_name]["count"] -= 1
-        if rooms[room_name]["count"] <= 0:
-            del rooms[room_name]
+    if room_name in rooms:
+        current_info = rooms[room_name]
+        if increase:
+            current_info["count"] += 1
+            logger.debug(
+                f"Increased participant count in {room_name}. New count: {current_info['count']}, Mode: {current_info['mode']}, Max: {current_info['max']}"
+            )
+        if decrease:
+            current_info["count"] -= 1
+            logger.debug(
+                f"Decreased participant count in {room_name}. New count: {current_info['count']}, Mode: {current_info['mode']}, Max: {current_info['max']}"
+            )
+            if current_info["count"] <= 0:
+                del rooms[room_name]
+                logger.debug(
+                    f"Room {room_name} deleted due to zero participants. Mode was {current_info['mode']}, Max was {current_info['max']}"
+                )
+    else:
+        logger.debug(f"Room {room_name} not found in rooms cache.")
+
     cache.set("rooms", rooms)
-    return rooms.get(room_name, {}.get("count", 0))
+    logger.debug(f"all rooms {rooms}")
+    return rooms.get(room_name, {}).get("count", 0)
