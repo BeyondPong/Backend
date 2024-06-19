@@ -60,8 +60,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if action == "start_game":
             # 프론트에서 window의 width, height 받음
-            game_width = 100
-            game_height = 100
+            game_width = data["width"]
+            game_height = data["height"]
             await self.game_settings(game_width, game_height)
             asyncio.create_task(self.start_ball_movement())
 
