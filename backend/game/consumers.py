@@ -22,6 +22,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.room_name = await sync_to_async(generate_room_name)(self.mode)
         self.room_group_name = f"game_room_{self.room_name}"
 
+        if self.mode == "TOURNAMENT":
+            is_valid = await sync_to_async(self.validate_nickname)(self.nickname)
+            if not is_valid:
+                return
+
         participants = cache.get(
             f"{self.room_name}_participants", {"players": [], "spectators": []}
         )
@@ -56,6 +61,22 @@ class GameConsumer(AsyncWebsocketConsumer):
             )
 
     async def disconnect(self, close_code):
+        participants = cache.get(
+            f"{self.room_name}_participants", {"players": [], "spectators": []}
+        )
+        if self.nickname in participants["players"]:
+            participants["players"].remove(self.nickname)
+        elif self.nickname in participants["spectators"]:
+            participants["spectators"].remove(self.nickname)
+
+        # 변경된 참가자 목록을 캐시에 다시 저장
+        cache.set(f"{self.room_name}_participants", participants)
+
+        # 닉네임 캐시에서 사용자 닉네임 제거
+        current_nicknames = cache.get(f"{self.room_name}_nicknames", set())
+        if self.nickname in current_nicknames:
+            current_nicknames.remove(self.nickname)
+            cache.set(f"{self.room_name}_nicknames", current_nicknames)
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
 
@@ -271,3 +292,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.update_ball_position()
             await self.send_ball_position()
             await asyncio.sleep(0.0625)  # 16 FPS
+
+    async def is_nickname_valid(self, room_name, nickname):
+        current_nicknames = cache.get(f"{room_name}_nicknames", set())
+        return nickname not in current_nicknames
