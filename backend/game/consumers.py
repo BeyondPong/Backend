@@ -63,7 +63,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             game_width = 100
             game_height = 100
             await self.game_settings(game_width, game_height)
-            # await self.start_ball_movement()
             asyncio.create_task(self.start_ball_movement())
 
         elif action == "move_ball":
@@ -189,9 +188,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         ball_velocity = self.ball_velocity
         current_participants = cache.get(f"{self.room_name}_participants", [])
 
-        if len(current_participants) >= 2:
-            top_paddle = self.paddles[current_participants[0]]
-            bottom_paddle = self.paddles[current_participants[1]]
+        for paddle in self.paddles:
+            if paddle["nickname"] == current_participants[0]:
+                top_paddle = paddle
+            if paddle["nickname"] == current_participants[1]:
+                bottom_paddle = paddle
 
         if (
             ball["y"] <= top_paddle["y"] + top_paddle["height"]
