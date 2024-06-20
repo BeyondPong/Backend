@@ -53,7 +53,7 @@ class OAuth42SocialLoginView(APIView):
             return Response({"error": "Fail to fetch user info"}, status=status.HTTP_400_BAD_REQUEST)
 
         # save user-info if not in Member-DB
-        user, user_status = self._login_or_signup(user_info)
+        user = self._login_or_signup(user_info)
         if isinstance(user, Response):
             return user
 
@@ -62,11 +62,8 @@ class OAuth42SocialLoginView(APIView):
         if not jwt_token:
             return Response({"error": "Fail to create jwt token"}, status=status.HTTP_400_BAD_REQUEST)
 
-        logger.debug("======= SUCCESS: for getting user-info =======")
-        return Response({
-            "token": jwt_token,
-            "status": user_status
-        })
+        logger.debug("========== [LOGIN] SUCCESS: for getting user-info ==========")
+        return Response({"token": jwt_token})
 
     # only used in class
     def _get_access_token(self, code):
@@ -109,22 +106,22 @@ class OAuth42SocialLoginView(APIView):
         nickname = user_info.get("login")
 
         users = Member.objects.filter(nickname=nickname)
-        if users.exists():
+        if users.exists():      # origin user
             user = users.first()
-            user_status = "origin_user"
             logger.debug("========== ALREADY EXIST USER ==========")
-        else:
+        else:                   # new user
             try:
                 user = Member.objects.create_user(
                     email=email,
                     nickname=nickname,
                 )
-                user_status = "new_user"
+                # saved user-status in cache
+                cache.set(f"status_{user.nickname}", "new_user", timeout=180)
                 logger.debug("========== NEW USER SAVED IN DB ==========")
             except ValueError as e:
                 logger.error(f"!!!!!!!! ERROR creating user: {e} !!!!!!!!")
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return user, user_status
+        return user
 
     def _create_jwt_token(self, user):
         payload = {
@@ -139,6 +136,29 @@ class OAuth42SocialLoginView(APIView):
         except Exception as e:
             logger.error(f"!!!!!!!! ERROR creating jwt token: {e} !!!!!!!!")
             return None
+
+
+"""
+[ Status for user ]
+1. FE >> before Two Factor check if user registered >> BE
+   BE >> check cache >> get status(new or origin) >> FE
+"""
+
+
+class RegistrationStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        logger.debug("========== [REGISTRATION_API] ==========")
+        # find status from cache
+        user_status = cache.get(f"status_{request.user.nickname}")
+        if not user_status:
+            user_status = "origin_user"
+        else:
+            cache.delete(f"status_{request.user.nickname}")
+        logger.debug(f"{request.user.nickname}: {user_status}")
+
+        return Response({"status": user_status})
 
 
 """
