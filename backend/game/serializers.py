@@ -4,6 +4,9 @@ from .models import Game
 
 
 class GameResultSerializer(serializers.ModelSerializer):
+    user1 = serializers.CharField()
+    user2 = serializers.CharField()
+
     class Meta:
         model = Game
         fields = ['user1', 'user2', 'user1_score', 'user2_score', 'game_type']
