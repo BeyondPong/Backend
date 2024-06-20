@@ -43,7 +43,7 @@ class JWTAuthentication(BaseAuthentication):
                 user = Member.objects.get(nickname=payload["nickname"])
                 logger.debug(f"========= Authenticated user: {user.nickname}=========")
                 # check 2fa except 2fa-view
-                if request.path.startswith("/login/two_fa/"):
+                if request.path.startswith("/login/two_fa/") or request.path == "/login/registration/":
                     return user, jwt_token
                 auth_2fa = payload["2fa"]
                 if auth_2fa == "false":
