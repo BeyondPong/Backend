@@ -114,12 +114,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.game_settings(game_width, game_height)
             asyncio.create_task(self.start_ball_movement())
 
-        elif action == "restart_game":  # update_score 이후에 게임 시작 로직
-            self.running = True
-            self.game_ended = False
-            await self.game_settings(self.game_width, self.game_height)
-            asyncio.create_task(self.start_ball_movement())
-
         elif action == "move_ball":
             self.update_ball_position()
             await self.send_ball_position()
