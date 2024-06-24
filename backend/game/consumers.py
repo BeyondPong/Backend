@@ -63,10 +63,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.room_group_name = f"game_room_{self.room_name}"
 
         self.current_participants = cache.get(f"{self.room_name}_participants", [])
-        if not self.current_participants:
-            cache.set(
-                f"{self.room_name}_participants", self.current_participants, timeout=3600
-            )
+
         # 참가자 추가
         self.current_participants.append(self.nickname)
         cache.set(f"{self.room_name}_participants", self.current_participants)
@@ -76,15 +73,14 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
-        max_participants = 2 if self.mode == "REMOTE" else 4
-
-        if len(self.current_participants) == max_participants:
+        # todo Tournament에 대한 게임 시작 로직 추가(위치 변경)
+        if self.mode == "REMOTE" and len(self.current_participants) == 2:
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
                     "type": "broadcast_event",
                     "event_type": "start_game",
-                    "data": {"first_user": current_participants[0]},
+                    "data": {"first_user": self.current_participants[0]},
                 },
             )
 
@@ -115,21 +111,19 @@ class GameConsumer(AsyncWebsocketConsumer):
         logger.debug(f"Updated nicknames in {self.room_name}: {current_nicknames}")
 
     def remove_participant_from_cache(self):
-        current_participants = cache.get(f"{self.room_name}_participants", [])
-        current_participants = [p for p in current_participants if p != self.nickname]
-        cache.set(f"{self.room_name}_participants", current_participants)
+        self.current_participants = [p for p in self.current_participants if p != self.nickname]
+        cache.set(f"{self.room_name}_participants", self.current_participants)
         logger.debug(
-            f"Updated participants in {self.room_name}: {current_participants}"
+            f"Updated participants in {self.room_name}: {self.current_participants}"
         )
 
-    # todo
-    #       self.running으로 while 돌리는데 다시 게임 시작할 때 이전꺼 종료시키고 다시 새로 시작할 수 있도록 로직 추가
-    #       update_game_score에서 update_score을 다 진행할 거고 여기서 winner, loser 다 보내줘야 함
     # done
     #       move_ball, update_score, end_game 삭제
     #       action == restart_game 로직 추가
     #       update_score에서 ball_position 초기화 했던 부분 옮기기 (restart_game)
     #       game_start가 두번 호출되는 문제 해결
+    #       self.running으로 while 돌리는데 다시 게임 시작할 때 이전꺼 종료시키고 다시 새로 시작할 수 있도록 로직 추가
+    #       update_game_score에서 update_score을 다 진행할 거고 여기서 winner, loser 다 보내줘야 함
     async def receive(self, text_data):
         data = json.loads(text_data)
         action = data["type"]
@@ -141,30 +135,31 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self.check_nickname(nickname, realname)
 
         elif action == "start_game":
-            if self.running:
-                return
             await self.game_settings(data["width"], data["height"])
-            asyncio.create_task(self.start_ball_movement())
+            if data.get("running_user"):
+                asyncio.create_task(self.start_ball_movement())
 
         elif action == "restart_game":
-            if self.running:
-                return
             await self.init_data()
             await self.send_game_data("game_restart")
             self.running = True
-            asyncio.create_task(self.start_ball_movement())
+            if data.get("running_user"):
+                asyncio.create_task(self.start_ball_movement())
 
         elif action == "move_paddle":
+            logger.debug(f"move_paddle: {data['paddle']}, {self.running}")
             if not self.running:
                 return
             paddle_owner = data["paddle"]
+            logger.debug(f"paddle owner: {paddle_owner}")
             direction = data["direction"]
             await self.move_paddle(paddle_owner, direction)
             await self.send_paddle_position()
 
     async def check_nickname(self, nickname, realname):
-        participants = cache.get(f"{self.room_name}_participants", [])
-        logger.debug(f"Participants: {participants}")
+        # todo: cache.get 필요없으면 제거
+        self.current_participants = cache.get(f"{self.room_name}_participants", [])
+        logger.debug(f"Participants: {self.current_participants}")
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
 
         if any(nick == nickname for nick, _ in current_nicknames):
@@ -173,7 +168,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             )
             return
 
-        if realname in participants:
+        if realname in self.current_participants:
             current_nicknames.append((nickname, realname))
             cache.set(f"{self.room_name}_nicknames", current_nicknames)
             logger.debug(f"current_nicknames: {current_nicknames}")
@@ -266,7 +261,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             },
         )
 
-
     async def send_ball_position(self):
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -294,8 +288,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         ball["x"] += ball_velocity["x"]
         ball["y"] += ball_velocity["y"]
 
-        current_participants = cache.get(f"{self.room_name}_participants", [])
-
         if ball["x"] < grid:
             ball["x"] = grid
             ball_velocity["x"] *= -1
@@ -304,9 +296,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             ball_velocity["x"] *= -1
 
         if ball["y"] < 0:
-            await self.update_game_score(current_participants[1])
+            await self.update_game_score(self.current_participants[1], self.current_participants[0])
         elif ball["y"] > self.game_height:
-            await self.update_game_score(current_participants[0])
+            await self.update_game_score(self.current_participants[0], self.current_participants[1])
 
         await self.check_paddle_collision()
 
@@ -323,15 +315,14 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def check_paddle_collision(self):
         ball = self.ball_position
         ball_velocity = self.ball_velocity
-        current_participants = cache.get(f"{self.room_name}_participants", [])
 
-        if current_participants[0] in self.paddles:
-            top_paddle = self.paddles[current_participants[0]]
+        if self.current_participants[0] in self.paddles:
+            top_paddle = self.paddles[self.current_participants[0]]
         else:
             top_paddle = None
 
-        if current_participants[1] in self.paddles:
-            bottom_paddle = self.paddles[current_participants[1]]
+        if self.current_participants[1] in self.paddles:
+            bottom_paddle = self.paddles[self.current_participants[1]]
         else:
             bottom_paddle = None
 
@@ -353,11 +344,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             hit_pos = (ball["x"] - bottom_paddle["x"]) / bottom_paddle["width"]
             ball_velocity["x"] = (hit_pos - 0.5) * 2 * ball_speed
 
-    async def update_game_score(self, player):
+    async def update_game_score(self, winner, loser):
         self.running = False
-        self.scores[player] += 1
-        if self.scores[player] >= 7:  # 게임 종료 조건(end_game 여기서만 call)
-            await self.end_game(player)
+        self.scores[winner] += 1
+        if self.scores[winner] >= 7:  # 게임 종료 조건(end_game 여기서만 call)
+            await self.end_game(winner, loser)
         else:
             # init부분 삭제
             self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
@@ -379,11 +370,12 @@ class GameConsumer(AsyncWebsocketConsumer):
                 },
             )
 
-    async def end_game(self, winner):
+    async def end_game(self, winner, loser):
         self.game_ended = True
 
         end_game_data = {
             "winner": winner,
+            "loser": loser,
             "scores": self.scores,
         }
 
