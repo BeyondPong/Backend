@@ -18,6 +18,7 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
+
 class GameResultView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [JSONParser]
@@ -30,8 +31,8 @@ class GameResultView(APIView):
     def post(self, request):
         serializer = GameResultSerializer(data=request.data)
         if serializer.is_valid():
-            user1_nickname = serializer.validated_data['user1']
-            user2_nickname = serializer.validated_data['user2']
+            user1_nickname = serializer.validated_data["user1"]
+            user2_nickname = serializer.validated_data["user2"]
 
             user1 = get_object_or_404(Member, nickname=user1_nickname)
             user2 = get_object_or_404(Member, nickname=user2_nickname)
@@ -39,9 +40,9 @@ class GameResultView(APIView):
             game = Game(
                 user1=user1,
                 user2=user2,
-                user1_score=serializer.validated_data['user1_score'],
-                user2_score=serializer.validated_data['user2_score'],
-                game_type=serializer.validated_data['game_type']
+                user1_score=serializer.validated_data["user1_score"],
+                user2_score=serializer.validated_data["user2_score"],
+                game_type=serializer.validated_data["game_type"],
             )
             game.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -65,11 +66,16 @@ class CheckNicknameView(APIView):
         nickname = request.data.get("nickname")
         realname = request.data.get("realname")
         room_name = request.data.get("room_name")
-        logger.debug(f"nickname: {nickname}, realname: {realname}, room_name: {room_name}")
+        logger.debug(
+            f"nickname: {nickname}, realname: {realname}, room_name: {room_name}"
+        )
         participants = cache.get(f"{room_name}_participants", None)
         logger.debug(f"participants: {participants}")
         if participants is None:
-            return Response({"Message": "Room participants not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"Message": "Room participants not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         current_nicknames = cache.get(f"{room_name}_nicknames", set())
 
@@ -81,7 +87,8 @@ class CheckNicknameView(APIView):
             cache.set(f"{room_name}_nicknames", current_nicknames)
 
         serialized_nicknames = NicknameSerializer(
-            [{"nickname": nick, "realname": real} for nick, real in current_nicknames], many=True
+            [{"nickname": nick, "realname": real} for nick, real in current_nicknames],
+            many=True,
         ).data
 
         return Response({"valid": True, "nicknames": serialized_nicknames})

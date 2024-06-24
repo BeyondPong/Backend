@@ -11,6 +11,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from .utils import generate_room_name, manage_participants
 from login.authentication import JWTAuthentication, decode_jwt
 from django.contrib.auth.models import AnonymousUser
+from .serializers import NicknameSerializer
 
 from user.models import Member
 
@@ -25,8 +26,8 @@ paddle_speed = 6
 class GameConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         # JWT 토큰 확인 및 사용자 인증
-        token_key = self.scope['query_string'].decode().split('=')[1]
-        self.scope['user'] = await self.get_user_from_jwt(token_key)
+        token_key = self.scope["query_string"].decode().split("=")[1]
+        self.scope["user"] = await self.get_user_from_jwt(token_key)
 
         if not self.scope["user"].is_authenticated:
             logger.debug("User is not authenticated")
@@ -59,9 +60,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 {
                     "type": "broadcast_event",
                     "event_type": "start_game",
-                    "data": {
-                        "message": f"{max_participants} players are online, starting game."
-                    },
+                    "data": {"first_user": current_participants[0]},
                 },
             )
 
@@ -69,6 +68,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
         await sync_to_async(self.remove_nickname_from_cache)()
+        await sync_to_async(self.remove_participant_from_cache)()
 
     @database_sync_to_async
     def get_user_from_jwt(self, token_key):
@@ -76,28 +76,49 @@ class GameConsumer(AsyncWebsocketConsumer):
             payload = decode_jwt(token_key)
             if not payload:
                 return AnonymousUser()
-            user = Member.objects.get(nickname=payload['nickname'])
+            user = Member.objects.get(nickname=payload["nickname"])
             logger.debug(f"JWT user: {user}")
             return user
         except (jwt.ExpiredSignatureError, jwt.DecodeError, Member.DoesNotExist):
             return AnonymousUser()
 
     def remove_nickname_from_cache(self):
-        current_nicknames = cache.get(f"{self.room_name}_nicknames", set())
-        nickname = self.scope['user'].nickname
+        current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+        nickname = self.scope["user"].nickname
         logger.debug("nickname : %s", nickname)
-        current_nicknames = {n for n in current_nicknames if n[1] != nickname}
+        current_nicknames = [n for n in current_nicknames if n[1] != nickname]
         cache.set(f"{self.room_name}_nicknames", current_nicknames)
+        logger.debug(f"Updated nicknames in {self.room_name}: {current_nicknames}")
+
+    def remove_participant_from_cache(self):
+        current_participants = cache.get(f"{self.room_name}_participants", [])
+        current_participants = [p for p in current_participants if p != self.nickname]
+        cache.set(f"{self.room_name}_participants", current_participants)
+        logger.debug(
+            f"Updated participants in {self.room_name}: {current_participants}"
+        )
 
     async def receive(self, text_data):
         data = json.loads(text_data)
         action = data["type"]
 
-        if action == "start_game":
+        if action == "check_nickname":
+            if self.mode == "TOURNAMENT":
+                nickname = data["nickname"]
+                realname = self.nickname
+                await self.check_nickname(nickname, realname)
+
+        elif action == "start_game":  # 프론트에서 보내는거, 처음 게임 시작만 반응
             # 프론트에서 window의 width, height 받음
             game_width = data["width"]
             game_height = data["height"]
             await self.game_settings(game_width, game_height)
+            asyncio.create_task(self.start_ball_movement())
+
+        elif action == "restart_game":  # update_score 이후에 게임 시작 로직
+            self.running = True
+            self.game_ended = False
+            await self.game_settings(self.game_width, self.game_height)
             asyncio.create_task(self.start_ball_movement())
 
         elif action == "move_ball":
@@ -117,6 +138,43 @@ class GameConsumer(AsyncWebsocketConsumer):
         elif action == "end_game":
             await self.end_game()
 
+    async def check_nickname(self, nickname, realname):
+        participants = cache.get(f"{self.room_name}_participants", [])
+        logger.debug(f"Participants: {participants}")
+        current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+
+        if any(nick == nickname for nick, _ in current_nicknames):
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "broadcast_event",
+                    "event_type": "nickname_valid",
+                    "data": {"valid": False},
+                },
+            )
+            return
+
+        if realname in participants:
+            current_nicknames.append((nickname, realname))
+            cache.set(f"{self.room_name}_nicknames", current_nicknames)
+            logger.debug(f"current_nicknames: {current_nicknames}")
+        serialized_nicknames = NicknameSerializer(
+            [{"nickname": nick, "realname": real} for nick, real in current_nicknames],
+            many=True,
+        ).data
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_event",
+                "event_type": "nickname_valid",
+                "data": {
+                    "valid": True,
+                    "nicknames": serialized_nicknames,
+                },
+            },
+        )
+
     async def game_settings(self, game_width, game_height):
         self.game_width = game_width
         self.game_height = game_height
@@ -129,22 +187,26 @@ class GameConsumer(AsyncWebsocketConsumer):
         # 참가자 목록을 캐시에서 불러오기
         current_participants = cache.get(f"{self.room_name}_participants", [])
 
-        self.paddles = {}
+        self.paddles = []
         if len(current_participants) >= 2:
-            self.paddles[current_participants[0]] = {
-                "nickname": current_participants[0],
-                "x": self.game_width / 2 - self.paddle_width / 2,
-                "y": grid * 2,
-                "width": self.paddle_width,
-                "height": grid,
-            }
-            self.paddles[current_participants[1]] = {
-                "nickname": current_participants[1],
-                "x": self.game_width / 2 - self.paddle_width / 2,
-                "y": self.game_height - grid * 3,
-                "width": self.paddle_width,
-                "height": grid,
-            }
+            self.paddles.append(
+                {
+                    "nickname": current_participants[0],
+                    "x": self.game_width / 2 - self.paddle_width / 2,
+                    "y": self.game_height - grid * 3,
+                    "width": self.paddle_width,
+                    "height": grid,
+                }
+            )
+            self.paddles.append(
+                {
+                    "nickname": current_participants[1],
+                    "x": self.game_width / 2 - self.paddle_width / 2,
+                    "y": grid * 2,
+                    "width": self.paddle_width,
+                    "height": grid,
+                }
+            )
         self.scores = {nickname: 0 for nickname in current_participants}
         self.running = True
         self.game_ended = False
@@ -230,47 +292,57 @@ class GameConsumer(AsyncWebsocketConsumer):
             bottom_paddle = None
 
         if top_paddle and (
-                ball["y"] <= top_paddle["y"] + top_paddle["height"]
-                and ball["x"] + grid > top_paddle["x"]
-                and ball["x"] < top_paddle["x"] + top_paddle["width"]
+            ball["y"] <= top_paddle["y"] + top_paddle["height"]
+            and ball["x"] + grid > top_paddle["x"]
+            and ball["x"] < top_paddle["x"] + top_paddle["width"]
         ):
             ball_velocity["y"] *= -1
             hit_pos = (ball["x"] - top_paddle["x"]) / top_paddle["width"]
             ball_velocity["x"] = (hit_pos - 0.5) * 2 * ball_speed
 
         if bottom_paddle and (
-                ball["y"] + grid >= bottom_paddle["y"]
-                and ball["x"] + grid > bottom_paddle["x"]
-                and ball["x"] < bottom_paddle["x"] + bottom_paddle["width"]
+            ball["y"] + grid >= bottom_paddle["y"]
+            and ball["x"] + grid > bottom_paddle["x"]
+            and ball["x"] < bottom_paddle["x"] + bottom_paddle["width"]
         ):
             ball_velocity["y"] *= -1
             hit_pos = (ball["x"] - bottom_paddle["x"]) / bottom_paddle["width"]
             ball_velocity["x"] = (hit_pos - 0.5) * 2 * ball_speed
 
     async def update_game_score(self, player):
-        self.scores[player] += 1
-        if self.scores[player] >= 7:  # 게임 종료 조건
-            self.running = False
-            self.game_ended = True
-            await self.end_game(player)
-        else:
-            self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
-            self.ball_velocity = {"x": ball_speed, "y": ball_speed}
+        for score in self.scores:
+            if score["nickname"] == player:
+                score["score"] += 1
+            if self.scores[player] >= 7:  # 게임 종료 조건
+                self.running = False
+                self.game_ended = True
+                await self.end_game(player)
+                return  # 점수 업데이트 후 나머지 로직은 실행하지 않음
 
-            game_score = {
-                "scores": self.scores,
-                "ball_position": self.ball_position,
-                "ball_velocity": self.ball_velocity,
-            }
+        self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
+        self.ball_velocity = {"x": ball_speed, "y": ball_speed}
 
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    "type": "broadcast_event",
-                    "event_type": "update_score",
-                    "data": game_score,
-                },
-            )
+        for paddle in self.paddles:
+            paddle["x"] = self.game_width / 2 - self.paddle_width / 2
+            if paddle["nickname"] == self.paddles[0]["nickname"]:
+                paddle["y"] = self.game_height - grid * 3  # 하단 패들 초기 위치
+            else:
+                paddle["y"] = grid * 2  # 상단 패들 초기 위치
+        game_score = {
+            "scores": self.scores,
+            "ball_position": self.ball_position,
+            "ball_velocity": self.ball_velocity,
+            "paddles": self.paddles,
+        }
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_event",
+                "event_type": "update_score",
+                "data": game_score,
+            },
+        )
 
     async def end_game(self, winner):
         self.running = False
@@ -300,4 +372,4 @@ class GameConsumer(AsyncWebsocketConsumer):
         while self.running:
             await self.update_ball_position()
             await self.send_ball_position()
-            await asyncio.sleep(0.0625)  # 16 FPS
+            await asyncio.sleep(0.01667)  # 60 FPS
