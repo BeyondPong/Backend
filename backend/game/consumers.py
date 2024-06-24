@@ -8,6 +8,9 @@ from django.core.cache import cache
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Q, F
+
+from game.models import Game
 from .utils import generate_room_name, manage_participants
 from login.authentication import JWTAuthentication, decode_jwt
 from django.contrib.auth.models import AnonymousUser
@@ -137,13 +140,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
 
         if any(nick == nickname for nick, _ in current_nicknames):
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    "type": "broadcast_event",
-                    "event_type": "nickname_valid",
-                    "data": {"valid": False},
-                },
+            await self.send(
+                text_data=json.dumps({"valid": False})
             )
             return
 
@@ -151,9 +149,23 @@ class GameConsumer(AsyncWebsocketConsumer):
             current_nicknames.append((nickname, realname))
             cache.set(f"{self.room_name}_nicknames", current_nicknames)
             logger.debug(f"current_nicknames: {current_nicknames}")
-        serialized_nicknames = [
-            {"nickname": nick, "realname": real} for nick, real in current_nicknames
-        ]
+        serialized_nicknames = []
+        for nick, real in current_nicknames:
+            user = await database_sync_to_async(Member.objects.get)(nickname=real)
+            win_cnt = await database_sync_to_async(Game.objects.filter(
+                (Q(user1=user) & Q(user1_score__gt=F('user2_score'))) |
+                (Q(user2=user) & Q(user2_score__gt=F('user1_score')))
+            ).count)()
+            lose_cnt = await database_sync_to_async(Game.objects.filter(
+                (Q(user1=user) & Q(user1_score__lt=F('user2_score'))) |
+                (Q(user2=user) & Q(user2_score__lt=F('user1_score')))
+            ).count)()
+            serialized_nicknames.append({
+                "nickname": nick,
+                "win_cnt": win_cnt,
+                "lose_cnt": lose_cnt,
+                "profile_img": user.profile_img
+            })
 
         await self.channel_layer.group_send(
             self.room_group_name,
