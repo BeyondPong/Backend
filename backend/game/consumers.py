@@ -127,36 +127,32 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.max_paddle_x = self.game_width - 15 - self.paddle_width
 
         # 참가자 목록을 캐시에서 불러오기
-        current_paricipants = cache.get(f"{self.room_name}_participants", [])
+        current_participants = cache.get(f"{self.room_name}_participants", [])
 
-        self.paddles = []
-        if len(current_paricipants) >= 2:
-            self.paddles.append(
-                {
-                    "nickname": current_paricipants[0],
-                    "x": self.game_width / 2 - self.paddle_width / 2,
-                    "y": grid * 2,
-                    "width": self.paddle_width,
-                    "height": grid,
-                }
-            )
-            self.paddles.append(
-                {
-                    "nickname": current_paricipants[1],
-                    "x": self.game_width / 2 - self.paddle_width / 2,
-                    "y": self.game_height - grid * 3,
-                    "width": self.paddle_width,
-                    "height": grid,
-                }
-            )
-        self.scores = {nickname: 0 for nickname in current_paricipants}
+        self.paddles = {}
+        if len(current_participants) >= 2:
+            self.paddles[current_participants[0]] = {
+                "nickname": current_participants[0],
+                "x": self.game_width / 2 - self.paddle_width / 2,
+                "y": grid * 2,
+                "width": self.paddle_width,
+                "height": grid,
+            }
+            self.paddles[current_participants[1]] = {
+                "nickname": current_participants[1],
+                "x": self.game_width / 2 - self.paddle_width / 2,
+                "y": self.game_height - grid * 3,
+                "width": self.paddle_width,
+                "height": grid,
+            }
+        self.scores = {nickname: 0 for nickname in current_participants}
         self.running = True
         self.game_ended = False
 
         game_data = {
             "ball_position": self.ball_position,
             "ball_velocity": self.ball_velocity,
-            "paddles": self.paddles,
+            "paddles": [paddle for paddle in self.paddles.values()],
             "scores": self.scores,
         }
 
@@ -181,7 +177,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             {
                 "type": "broadcast_event",
                 "event_type": "paddle_position",
-                "data": self.paddles,
+                "data": [paddle for paddle in self.paddles.values()],
             },
         )
 
@@ -223,25 +219,29 @@ class GameConsumer(AsyncWebsocketConsumer):
         ball_velocity = self.ball_velocity
         current_participants = cache.get(f"{self.room_name}_participants", [])
 
-        for paddle in self.paddles:
-            if paddle["nickname"] == current_participants[0]:
-                top_paddle = paddle
-            if paddle["nickname"] == current_participants[1]:
-                bottom_paddle = paddle
+        if current_participants[0] in self.paddles:
+            top_paddle = self.paddles[current_participants[0]]
+        else:
+            top_paddle = None
 
-        if (
-            ball["y"] <= top_paddle["y"] + top_paddle["height"]
-            and ball["x"] + grid > top_paddle["x"]
-            and ball["x"] < top_paddle["x"] + top_paddle["width"]
+        if current_participants[1] in self.paddles:
+            bottom_paddle = self.paddles[current_participants[1]]
+        else:
+            bottom_paddle = None
+
+        if top_paddle and (
+                ball["y"] <= top_paddle["y"] + top_paddle["height"]
+                and ball["x"] + grid > top_paddle["x"]
+                and ball["x"] < top_paddle["x"] + top_paddle["width"]
         ):
             ball_velocity["y"] *= -1
             hit_pos = (ball["x"] - top_paddle["x"]) / top_paddle["width"]
             ball_velocity["x"] = (hit_pos - 0.5) * 2 * ball_speed
 
-        if (
-            ball["y"] + grid >= bottom_paddle["y"]
-            and ball["x"] + grid > bottom_paddle["x"]
-            and ball["x"] < bottom_paddle["x"] + bottom_paddle["width"]
+        if bottom_paddle and (
+                ball["y"] + grid >= bottom_paddle["y"]
+                and ball["x"] + grid > bottom_paddle["x"]
+                and ball["x"] < bottom_paddle["x"] + bottom_paddle["width"]
         ):
             ball_velocity["y"] *= -1
             hit_pos = (ball["x"] - bottom_paddle["x"]) / bottom_paddle["width"]
