@@ -11,7 +11,6 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from .utils import generate_room_name, manage_participants
 from login.authentication import JWTAuthentication, decode_jwt
 from django.contrib.auth.models import AnonymousUser
-from .serializers import NicknameSerializer
 
 from user.models import Member
 
@@ -158,10 +157,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             current_nicknames.append((nickname, realname))
             cache.set(f"{self.room_name}_nicknames", current_nicknames)
             logger.debug(f"current_nicknames: {current_nicknames}")
-        serialized_nicknames = NicknameSerializer(
-            [{"nickname": nick, "realname": real} for nick, real in current_nicknames],
-            many=True,
-        ).data
+        serialized_nicknames = [
+            {"nickname": nick, "realname": real} for nick, real in current_nicknames
+        ]
 
         await self.channel_layer.group_send(
             self.room_group_name,
