@@ -26,6 +26,8 @@ paddle_speed = 6
 
 
 class GameConsumer(AsyncWebsocketConsumer):
+
+    running = {}
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # connect
@@ -42,10 +44,10 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.paddle_width = None
         self.paddle_height = None
         self.max_paddle_x = None
+        self.running_user = False
         self.paddles = {}
         self.scores = {}
         self.current_participants = []
-        self.running = False
         self.game_ended = False
 
     async def connect(self):
@@ -106,6 +108,12 @@ class GameConsumer(AsyncWebsocketConsumer):
                 },
             )
 
+        if self.mode == "REMOTE":   # TOURNAMENT이면서 본인이 player일때 조건 추가
+            GameConsumer.running[self.room_group_name] = False
+            participants = cache.get(f"{self.room_name}_participants")
+            if not participants:
+                del GameConsumer.running[self.room_group_name]
+
     @database_sync_to_async
     def get_user_from_jwt(self, token_key):
         try:
@@ -135,6 +143,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             f"Updated participants in {self.room_name}: {self.current_participants}"
         )
 
+    # todo
+    # done
+    #   - update_score에서 group_send 없앤 부분 다시 복구
+    #   - restart_game 전에 프론트에서 2초 쉬고 재시작을 요청했었던 부분 대신
+    #     update_score 내부에서 2초 쉬고 restart_game하고 group_send 하는 형태로 진행
+    #     이때 반드시 변수 running도 group_send로 refresh 해줘야 함
+    #     game_start라는 응답 자체도 한번만 보내야 함
     async def receive(self, text_data):
         data = json.loads(text_data)
         action = data["type"]
@@ -146,19 +161,12 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self.check_nickname(nickname, realname)
 
         elif action == "start_game":
-            await self.game_settings(data["width"], data["height"])
-            if data.get("running_user"):
-                asyncio.create_task(self.start_ball_movement())
-
-        elif action == "restart_game":
-            await self.init_data()
-            await self.send_game_data("game_restart")
-            self.running = True
-            if data.get("running_user"):
+            await self.game_settings(data["width"], data["height"], data["running_user"])
+            if data["running_user"]:
                 asyncio.create_task(self.start_ball_movement())
 
         elif action == "move_paddle":
-            if not self.running:
+            if not GameConsumer.running[self.room_group_name]:
                 return
             paddle_owner = data["paddle"]
             logger.debug(f"paddle owner: {paddle_owner}")
@@ -221,9 +229,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             )
         return serialized_nicknames
 
-    async def game_settings(self, game_width, game_height):
-        self.running = True
-
+    async def game_settings(self, game_width, game_height, running_user):
         self.game_width = game_width
         self.game_height = game_height
         self.paddle_width = paddle_width
@@ -235,7 +241,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # 게임 시작하기 직전에 방 나간 경우(?)
         if len(self.current_participants) < 2:
-            self.running = False
+            GameConsumer.running[self.room_group_name] = False
             self.game_ended = True
             return
 
@@ -243,7 +249,12 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.init_data()
         self.scores = {nickname: 0 for nickname in self.current_participants}
         self.game_ended = False
-        await self.send_game_data("game_start")
+        if running_user:
+            self.running_user = True
+            GameConsumer.running[self.room_group_name] = True
+            await self.send_game_data("game_start")
+        else:
+            self.running_user = False
 
     async def init_data(self):
         self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
@@ -290,7 +301,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                "type": "broadcast_event",
+                "type": "broadcast_paddle_position",
                 "event_type": "paddle_position",
                 "data": [paddle for paddle in self.paddles.values()],
             },
@@ -312,11 +323,11 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if ball["y"] < 0:
             await self.update_game_score(
-                self.current_participants[1], self.current_participants[0]
+                self.current_participants[0], self.current_participants[1]
             )
         elif ball["y"] > self.game_height:
             await self.update_game_score(
-                self.current_participants[0], self.current_participants[1]
+                self.current_participants[1], self.current_participants[0]
             )
 
         await self.check_paddle_collision()
@@ -364,10 +375,34 @@ class GameConsumer(AsyncWebsocketConsumer):
             ball_velocity["x"] = (hit_pos - 0.5) * 2 * ball_speed
 
     async def update_game_score(self, winner, loser):
-        self.running = False
+        GameConsumer.running[self.room_group_name] = False
         self.scores[winner] += 1
-        if self.scores[winner] >= 7:  # 게임 종료 조건(end_game 여기서만 call)
+
+        # 게임 종료 조건(end_game 여기서만 call)
+        if self.scores[winner] >= 7:
             await self.end_game(winner, loser)
+            return
+
+        # send score
+        game_score = {
+            "scores": self.scores,
+            "ball_position": self.ball_position,
+        }
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_event",
+                "event_type": "update_score",
+                "data": game_score,
+            },
+        )
+
+        # sleep and restart_game
+        await asyncio.sleep(2)
+        await self.init_data()
+        await self.send_game_data("game_restart")
+        GameConsumer.running[self.room_group_name] = True
+
 
     async def end_game(self, winner, loser):
         self.game_ended = True
@@ -393,8 +428,17 @@ class GameConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"type": event_type, "data": event["data"]})
         )
 
+    async def broadcast_paddle_position(self, event):
+        paddles = event["data"]
+        for paddle in paddles:
+            self.paddles[paddle["nickname"]] = paddle
+        event_type = event["event_type"]
+        await self.send(
+            text_data=json.dumps({"type": event_type, "data": event["data"]})
+        )
+
     async def start_ball_movement(self):
-        while self.running:
+        while GameConsumer.running[self.room_group_name]:
             await self.update_ball_position()
             await self.send_ball_position()
             await asyncio.sleep(0.01667)  # 60 FPS
