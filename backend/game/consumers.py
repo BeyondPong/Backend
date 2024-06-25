@@ -335,13 +335,13 @@ class GameConsumer(AsyncWebsocketConsumer):
         ball = self.ball_position
         ball_velocity = self.ball_velocity
 
-        if self.current_participants[0] in self.paddles:
-            top_paddle = self.paddles[self.current_participants[0]]
+        if self.current_participants[1] in self.paddles:
+            top_paddle = self.paddles[self.current_participants[1]]
         else:
             top_paddle = None
 
-        if self.current_participants[1] in self.paddles:
-            bottom_paddle = self.paddles[self.current_participants[1]]
+        if self.current_participants[0] in self.paddles:
+            bottom_paddle = self.paddles[self.current_participants[0]]
         else:
             bottom_paddle = None
 
