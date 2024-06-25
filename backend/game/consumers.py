@@ -169,7 +169,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             if not GameConsumer.running[self.room_group_name]:
                 return
             paddle_owner = data["paddle"]
-            logger.debug(f"paddle owner: {paddle_owner}")
             direction = data["direction"]
             await self.move_paddle(paddle_owner, direction)
             await self.send_paddle_position()
@@ -274,39 +273,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             "height": grid,
         }
 
-    async def send_game_data(self, event_type):
-        game_data = {
-            "ball_position": self.ball_position,
-            "ball_velocity": self.ball_velocity,
-            "paddles": [paddle for paddle in self.paddles.values()],
-            "scores": self.scores,
-        }
-
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {"type": "broadcast_event", "event_type": event_type, "data": game_data},
-        )
-
-    async def send_ball_position(self):
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "broadcast_event",
-                "event_type": "ball_position",
-                "data": self.ball_position,
-            },
-        )
-
-    async def send_paddle_position(self):
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "broadcast_paddle_position",
-                "event_type": "paddle_position",
-                "data": [paddle for paddle in self.paddles.values()],
-            },
-        )
-
     async def update_ball_position(self):
         ball = self.ball_position
         ball_velocity = self.ball_velocity
@@ -321,15 +287,16 @@ class GameConsumer(AsyncWebsocketConsumer):
             ball["x"] = self.game_width - grid * 2
             ball_velocity["x"] *= -1
 
-        if ball["y"] < 0:
+        # if ball["y"] < 0:
+        if ball["y"] < self.paddles[self.current_participants[1]]["y"] - (self.paddles[self.current_participants[1]]["height"] / 2):
             await self.update_game_score(
                 self.current_participants[0], self.current_participants[1]
             )
-        elif ball["y"] > self.game_height:
+        # elif ball["y"] > self.game_height:
+        elif ball["y"] > self.paddles[self.current_participants[0]]["y"] + (self.paddles[self.current_participants[0]]["height"] / 2):
             await self.update_game_score(
                 self.current_participants[1], self.current_participants[0]
             )
-
         await self.check_paddle_collision()
 
     async def move_paddle(self, paddle_owner, direction):
@@ -402,7 +369,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.init_data()
         await self.send_game_data("game_restart")
         GameConsumer.running[self.room_group_name] = True
-
+        # if self.running_user:
+        #     asyncio.create_task(self.start_ball_movement())
 
     async def end_game(self, winner, loser):
         self.game_ended = True
@@ -422,6 +390,51 @@ class GameConsumer(AsyncWebsocketConsumer):
             },
         )
 
+    """
+    ** send to group method
+    """
+
+    async def send_game_data(self, event_type):
+        game_data = {
+            "ball_position": self.ball_position,
+            "ball_velocity": self.ball_velocity,
+            "paddles": [paddle for paddle in self.paddles.values()],
+            "scores": self.scores,
+        }
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_game_data",
+                "event_type": event_type,
+                "data": game_data,
+            },
+        )
+
+    async def send_ball_position(self):
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_event",
+                "event_type": "ball_position",
+                "data": self.ball_position,
+            },
+        )
+
+    async def send_paddle_position(self):
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_paddle_position",
+                "event_type": "paddle_position",
+                "data": [paddle for paddle in self.paddles.values()],
+            },
+        )
+
+    """
+    ** custom broadcast method (default: broadcast_event)
+    """
+
     async def broadcast_event(self, event):
         event_type = event["event_type"]
         await self.send(
@@ -430,12 +443,42 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def broadcast_paddle_position(self, event):
         paddles = event["data"]
+        event_type = event["event_type"]
+        # update
         for paddle in paddles:
             self.paddles[paddle["nickname"]] = paddle
-        event_type = event["event_type"]
+        # send
         await self.send(
             text_data=json.dumps({"type": event_type, "data": event["data"]})
         )
+
+    async def broadcast_game_data(self, event):
+        event_type = event["event_type"]
+        data = event["data"]
+        # update
+        self.ball_position = data["ball_position"]
+        self.ball_velocity = data["ball_velocity"]
+        self.paddles = {paddle["nickname"]: paddle for paddle in data["paddles"]}
+        self.scores = data["scores"]
+        # send
+        await self.send(
+            text_data=json.dumps({"type": event_type, "data": event["data"]})
+        )
+
+    # async def broadcast_score(self, event):
+    #     event_type = event["event_type"]
+    #     data = event["data"]
+    #     # update
+    #     self.scores = data["scores"]
+    #     self.ball_position = data["ball_position"]
+    #     # send
+    #     await self.send(
+    #         text_data=json.dumps({"type": event_type, "data": event["data"]})
+    #     )
+
+    """
+    ** coroutine method **
+    """
 
     async def start_ball_movement(self):
         while GameConsumer.running[self.room_group_name]:
