@@ -87,8 +87,24 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
-        await sync_to_async(self.remove_nickname_from_cache)()
         await sync_to_async(self.remove_participant_from_cache)()
+
+        if self.mode == "TOURNAMENT":
+            await sync_to_async(self.remove_nickname_from_cache)()
+            current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+
+            serialized_nicknames = await self.serialize_nicknames(current_nicknames)
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "broadcast_event",
+                    "event_type": "nickname_valid",
+                    "data": {
+                        "valid": True,
+                        "nicknames": serialized_nicknames,
+                    },
+                },
+            )
 
     @database_sync_to_async
     def get_user_from_jwt(self, token_key):
@@ -111,7 +127,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         logger.debug(f"Updated nicknames in {self.room_name}: {current_nicknames}")
 
     def remove_participant_from_cache(self):
-        self.current_participants = [p for p in self.current_participants if p != self.nickname]
+        self.current_participants = [
+            p for p in self.current_participants if p != self.nickname
+        ]
         cache.set(f"{self.room_name}_participants", self.current_participants)
         logger.debug(
             f"Updated participants in {self.room_name}: {self.current_participants}"
@@ -155,32 +173,15 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
 
         if any(nick == nickname for nick, _ in current_nicknames):
-            await self.send(
-                text_data=json.dumps({"valid": False})
-            )
+            await self.send(text_data=json.dumps({"valid": False}))
             return
 
         if realname in self.current_participants:
             current_nicknames.append((nickname, realname))
             cache.set(f"{self.room_name}_nicknames", current_nicknames)
             logger.debug(f"current_nicknames: {current_nicknames}")
-        serialized_nicknames = []
-        for nick, real in current_nicknames:
-            user = await database_sync_to_async(Member.objects.get)(nickname=real)
-            win_cnt = await database_sync_to_async(Game.objects.filter(
-                (Q(user1=user) & Q(user1_score__gt=F('user2_score'))) |
-                (Q(user2=user) & Q(user2_score__gt=F('user1_score')))
-            ).count)()
-            lose_cnt = await database_sync_to_async(Game.objects.filter(
-                (Q(user1=user) & Q(user1_score__lt=F('user2_score'))) |
-                (Q(user2=user) & Q(user2_score__lt=F('user1_score')))
-            ).count)()
-            serialized_nicknames.append({
-                "nickname": nick,
-                "win_cnt": win_cnt,
-                "lose_cnt": lose_cnt,
-                "profile_img": user.profile_img
-            })
+
+        serialized_nicknames = await self.serialize_nicknames(current_nicknames)
 
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -194,6 +195,32 @@ class GameConsumer(AsyncWebsocketConsumer):
             },
         )
 
+    async def serialize_nicknames(self, current_nicknames):
+        serialized_nicknames = []
+        for nick, real in current_nicknames:
+            user = await database_sync_to_async(Member.objects.get)(nickname=real)
+            win_cnt = await database_sync_to_async(
+                Game.objects.filter(
+                    (Q(user1=user) & Q(user1_score__gt=F("user2_score")))
+                    | (Q(user2=user) & Q(user2_score__gt=F("user1_score")))
+                ).count
+            )()
+            lose_cnt = await database_sync_to_async(
+                Game.objects.filter(
+                    (Q(user1=user) & Q(user1_score__lt=F("user2_score")))
+                    | (Q(user2=user) & Q(user2_score__lt=F("user1_score")))
+                ).count
+            )()
+            serialized_nicknames.append(
+                {
+                    "nickname": nick,
+                    "win_cnt": win_cnt,
+                    "lose_cnt": lose_cnt,
+                    "profile_img": user.profile_img,
+                }
+            )
+        return serialized_nicknames
+
     async def game_settings(self, game_width, game_height):
         self.running = True
 
@@ -201,7 +228,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.game_height = game_height
         self.paddle_width = paddle_width
         self.paddle_height = grid
-        self.max_paddle_x = self.game_width - 15 - self.paddle_width
+        self.max_paddle_x = self.game_width - grid - self.paddle_width
 
         # 참가자 목록 업데이트
         self.current_participants = cache.get(f"{self.room_name}_participants", [])
@@ -246,11 +273,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         await self.channel_layer.group_send(
             self.room_group_name,
-            {
-                "type": "broadcast_event",
-                "event_type": event_type,
-                "data": game_data
-            },
+            {"type": "broadcast_event", "event_type": event_type, "data": game_data},
         )
 
     async def send_ball_position(self):
@@ -288,9 +311,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             ball_velocity["x"] *= -1
 
         if ball["y"] < 0:
-            await self.update_game_score(self.current_participants[1], self.current_participants[0])
+            await self.update_game_score(
+                self.current_participants[1], self.current_participants[0]
+            )
         elif ball["y"] > self.game_height:
-            await self.update_game_score(self.current_participants[0], self.current_participants[1])
+            await self.update_game_score(
+                self.current_participants[0], self.current_participants[1]
+            )
 
         await self.check_paddle_collision()
 
