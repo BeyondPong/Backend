@@ -26,8 +26,12 @@ paddle_speed = 6
 
 
 class GameConsumer(AsyncWebsocketConsumer):
-
+    # global_data in class
     running = {}
+
+    """
+    ** constructor
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # connect
@@ -143,13 +147,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             f"Updated participants in {self.room_name}: {self.current_participants}"
         )
 
-    # todo
-    # done
-    #   - update_score에서 group_send 없앤 부분 다시 복구
-    #   - restart_game 전에 프론트에서 2초 쉬고 재시작을 요청했었던 부분 대신
-    #     update_score 내부에서 2초 쉬고 restart_game하고 group_send 하는 형태로 진행
-    #     이때 반드시 변수 running도 group_send로 refresh 해줘야 함
-    #     game_start라는 응답 자체도 한번만 보내야 함
     async def receive(self, text_data):
         data = json.loads(text_data)
         action = data["type"]
@@ -173,6 +170,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.move_paddle(paddle_owner, direction)
             await self.send_paddle_position()
 
+    """
+    ** action method
+    """
     async def check_nickname(self, nickname, realname):
         # todo: cache.get 필요없으면 제거
         self.current_participants = cache.get(f"{self.room_name}_participants", [])
@@ -351,20 +351,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             return
 
         # send score
-        game_score = {
-            "scores": self.scores,
-            "ball_position": self.ball_position,
-        }
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "broadcast_event",
-                "event_type": "update_score",
-                "data": game_score,
-            },
-        )
+        await self.send_game_score()
 
-        # sleep and restart_game
+        # sleep and restart_game(send restart game_data)
         await asyncio.sleep(2)
         await self.init_data()
         await self.send_game_data("game_restart")
@@ -393,7 +382,6 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
     ** send to group method
     """
-
     async def send_game_data(self, event_type):
         game_data = {
             "ball_position": self.ball_position,
@@ -401,7 +389,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             "paddles": [paddle for paddle in self.paddles.values()],
             "scores": self.scores,
         }
-
         await self.channel_layer.group_send(
             self.room_group_name,
             {
@@ -431,10 +418,23 @@ class GameConsumer(AsyncWebsocketConsumer):
             },
         )
 
+    async def send_game_score(self):
+        game_score = {
+            "scores": self.scores,
+            "ball_position": self.ball_position,
+        }
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_event",
+                "event_type": "update_score",
+                "data": game_score,
+            }
+        )
+
     """
     ** custom broadcast method (default: broadcast_event)
     """
-
     async def broadcast_event(self, event):
         event_type = event["event_type"]
         await self.send(
@@ -477,9 +477,8 @@ class GameConsumer(AsyncWebsocketConsumer):
     #     )
 
     """
-    ** coroutine method **
+    ** coroutine method
     """
-
     async def start_ball_movement(self):
         while GameConsumer.running[self.room_group_name]:
             await self.update_ball_position()
