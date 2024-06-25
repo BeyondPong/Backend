@@ -117,13 +117,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             f"Updated participants in {self.room_name}: {self.current_participants}"
         )
 
-    # done
-    #       move_ball, update_score, end_game 삭제
-    #       action == restart_game 로직 추가
-    #       update_score에서 ball_position 초기화 했던 부분 옮기기 (restart_game)
-    #       game_start가 두번 호출되는 문제 해결
-    #       self.running으로 while 돌리는데 다시 게임 시작할 때 이전꺼 종료시키고 다시 새로 시작할 수 있도록 로직 추가
-    #       update_game_score에서 update_score을 다 진행할 거고 여기서 winner, loser 다 보내줘야 함
     async def receive(self, text_data):
         data = json.loads(text_data)
         action = data["type"]
@@ -147,7 +140,6 @@ class GameConsumer(AsyncWebsocketConsumer):
                 asyncio.create_task(self.start_ball_movement())
 
         elif action == "move_paddle":
-            logger.debug(f"move_paddle: {data['paddle']}, {self.running}")
             if not self.running:
                 return
             paddle_owner = data["paddle"]
@@ -211,7 +203,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.paddle_height = grid
         self.max_paddle_x = self.game_width - 15 - self.paddle_width
 
-        # 참가자 목록을 캐시에서 불러오기
+        # 참가자 목록 업데이트
         self.current_participants = cache.get(f"{self.room_name}_participants", [])
 
         # 게임 시작하기 직전에 방 나간 경우(?)
@@ -349,26 +341,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.scores[winner] += 1
         if self.scores[winner] >= 7:  # 게임 종료 조건(end_game 여기서만 call)
             await self.end_game(winner, loser)
-        else:
-            # init부분 삭제
-            self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
-            self.ball_velocity = {"x": ball_speed, "y": ball_speed}
-            # 패들 위치
-
-            game_score = {
-                "scores": self.scores,
-                "ball_position": self.ball_position,
-                "ball_velocity": self.ball_velocity,
-            }
-
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    "type": "broadcast_event",
-                    "event_type": "update_score",
-                    "data": game_score,
-                },
-            )
 
     async def end_game(self, winner, loser):
         self.game_ended = True
