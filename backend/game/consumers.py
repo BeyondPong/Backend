@@ -54,6 +54,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.current_participants = []
         self.game_ended = False
 
+    """
+    connect & disconnect method
+    """
     async def connect(self):
         # JWT 토큰 확인 및 사용자 인증
         token_key = self.scope["query_string"].decode().split("=")[1]
@@ -98,37 +101,13 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.mode == "TOURNAMENT":
             await sync_to_async(self.remove_nickname_from_cache)()
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
-
-            serialized_nicknames = await self.serialize_nicknames(current_nicknames)
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    "type": "broadcast_event",
-                    "event_type": "nickname_valid",
-                    "data": {
-                        "valid": True,
-                        "nicknames": serialized_nicknames,
-                    },
-                },
-            )
+            await self.send_nickname_validation(current_nicknames)
 
         if self.mode == "REMOTE":   # TOURNAMENT이면서 본인이 player일때 조건 추가
             GameConsumer.running[self.room_group_name] = False
             participants = cache.get(f"{self.room_name}_participants")
             if not participants:
                 del GameConsumer.running[self.room_group_name]
-
-    @database_sync_to_async
-    def get_user_from_jwt(self, token_key):
-        try:
-            payload = decode_jwt(token_key)
-            if not payload:
-                return AnonymousUser()
-            user = Member.objects.get(nickname=payload["nickname"])
-            logger.debug(f"JWT user: {user}")
-            return user
-        except (jwt.ExpiredSignatureError, jwt.DecodeError, Member.DoesNotExist):
-            return AnonymousUser()
 
     def remove_nickname_from_cache(self):
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
@@ -147,6 +126,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             f"Updated participants in {self.room_name}: {self.current_participants}"
         )
 
+    """
+    ** receive method (from frontend-action)
+    """
     async def receive(self, text_data):
         data = json.loads(text_data)
         action = data["type"]
@@ -188,45 +170,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             cache.set(f"{self.room_name}_nicknames", current_nicknames)
             logger.debug(f"current_nicknames: {current_nicknames}")
 
-        serialized_nicknames = await self.serialize_nicknames(current_nicknames)
-
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "broadcast_event",
-                "event_type": "nickname_valid",
-                "data": {
-                    "valid": True,
-                    "nicknames": serialized_nicknames,
-                },
-            },
-        )
-
-    async def serialize_nicknames(self, current_nicknames):
-        serialized_nicknames = []
-        for nick, real in current_nicknames:
-            user = await database_sync_to_async(Member.objects.get)(nickname=real)
-            win_cnt = await database_sync_to_async(
-                Game.objects.filter(
-                    (Q(user1=user) & Q(user1_score__gt=F("user2_score")))
-                    | (Q(user2=user) & Q(user2_score__gt=F("user1_score")))
-                ).count
-            )()
-            lose_cnt = await database_sync_to_async(
-                Game.objects.filter(
-                    (Q(user1=user) & Q(user1_score__lt=F("user2_score")))
-                    | (Q(user2=user) & Q(user2_score__lt=F("user1_score")))
-                ).count
-            )()
-            serialized_nicknames.append(
-                {
-                    "nickname": nick,
-                    "win_cnt": win_cnt,
-                    "lose_cnt": lose_cnt,
-                    "profile_img": user.profile_img,
-                }
-            )
-        return serialized_nicknames
+        await self.send_nickname_validation(current_nicknames)
 
     async def game_settings(self, game_width, game_height, running_user):
         self.game_width = game_width
@@ -254,24 +198,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.send_game_data("game_start")
         else:
             self.running_user = False
-
-    async def init_data(self):
-        self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
-        self.ball_velocity = {"x": 5, "y": 5}
-        self.paddles[self.current_participants[0]] = {
-            "nickname": self.current_participants[0],
-            "x": self.game_width / 2 - self.paddle_width / 2,
-            "y": self.game_height - grid * 3,
-            "width": self.paddle_width,
-            "height": grid,
-        }
-        self.paddles[self.current_participants[1]] = {
-            "nickname": self.current_participants[1],
-            "x": self.game_width / 2 - self.paddle_width / 2,
-            "y": grid * 2,
-            "width": self.paddle_width,
-            "height": grid,
-        }
 
     async def update_ball_position(self):
         ball = self.ball_position
@@ -380,8 +306,81 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
 
     """
+    ** util method
+    """
+    @database_sync_to_async
+    def get_user_from_jwt(self, token_key):
+        try:
+            payload = decode_jwt(token_key)
+            if not payload:
+                return AnonymousUser()
+            user = Member.objects.get(nickname=payload["nickname"])
+            logger.debug(f"JWT user: {user}")
+            return user
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, Member.DoesNotExist):
+            return AnonymousUser()
+
+    async def serialize_nicknames(self, current_nicknames):
+        serialized_nicknames = []
+        for nick, real in current_nicknames:
+            user = await database_sync_to_async(Member.objects.get)(nickname=real)
+            win_cnt = await database_sync_to_async(
+                Game.objects.filter(
+                    (Q(user1=user) & Q(user1_score__gt=F("user2_score")))
+                    | (Q(user2=user) & Q(user2_score__gt=F("user1_score")))
+                ).count
+            )()
+            lose_cnt = await database_sync_to_async(
+                Game.objects.filter(
+                    (Q(user1=user) & Q(user1_score__lt=F("user2_score")))
+                    | (Q(user2=user) & Q(user2_score__lt=F("user1_score")))
+                ).count
+            )()
+            serialized_nicknames.append(
+                {
+                    "nickname": nick,
+                    "win_cnt": win_cnt,
+                    "lose_cnt": lose_cnt,
+                    "profile_img": user.profile_img,
+                }
+            )
+        return serialized_nicknames
+
+    async def init_data(self):
+        self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
+        self.ball_velocity = {"x": 5, "y": 5}
+        self.paddles[self.current_participants[0]] = {
+            "nickname": self.current_participants[0],
+            "x": self.game_width / 2 - self.paddle_width / 2,
+            "y": self.game_height - grid * 3,
+            "width": self.paddle_width,
+            "height": grid,
+        }
+        self.paddles[self.current_participants[1]] = {
+            "nickname": self.current_participants[1],
+            "x": self.game_width / 2 - self.paddle_width / 2,
+            "y": grid * 2,
+            "width": self.paddle_width,
+            "height": grid,
+        }
+
+    """
     ** send to group method
     """
+    async def send_nickname_validation(self, current_nicknames):
+        serialized_nicknames = await self.serialize_nicknames(current_nicknames)
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_event",
+                "event_type": "nickname_valid",
+                "data": {
+                    "valid": True,
+                    "nicknames": serialized_nicknames,
+                },
+            },
+        )
+
     async def send_game_data(self, event_type):
         game_data = {
             "ball_position": self.ball_position,
