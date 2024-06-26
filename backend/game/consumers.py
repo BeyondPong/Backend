@@ -200,17 +200,16 @@ class GameConsumer(AsyncWebsocketConsumer):
             logger.debug("4명이 다 들어왔습니다!")
             serialized_nicknames = await self.serialize_nicknames(current_nicknames)
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
-            first_nickname = current_nicknames[0][0]
+            # todo: BE에서 running_user 관리 >> 역할 부여 후 다시 변경해야 함
+            if self.nickname == current_nicknames[0][1]:
+                self.running_user = True
             logger.debug(f"serialized_nicknames: {serialized_nicknames}")
-            logger.debug(f"first_user: {first_nickname}")
-
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
                     "type": "broadcast_event",
                     "event_type": "start_game",
                     "data": {
-                        "first_user": first_nickname,
                         "nicknames": serialized_nicknames,
                     },
                 },
