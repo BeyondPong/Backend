@@ -217,20 +217,24 @@ class GameConsumer(AsyncWebsocketConsumer):
             ball["x"] = self.game_width - grid * 2
             ball_velocity["x"] *= -1
 
-        # if ball["y"] < 0:
-        if ball["y"] < self.paddles[self.current_participants[1]]["y"] - (
-            self.paddles[self.current_participants[1]]["height"] / 2
+        if (
+            self.current_participants[0] in self.paddles
+            and self.current_participants[1] in self.paddles
         ):
-            await self.update_game_score(
-                self.current_participants[0], self.current_participants[1]
+            bottom_paddle_mid = self.paddles[self.current_participants[0]]["y"] + (
+                self.paddles[self.current_participants[0]]["height"] / 2 + 10
             )
-        # elif ball["y"] > self.game_height:
-        elif ball["y"] > self.paddles[self.current_participants[0]]["y"] + (
-            self.paddles[self.current_participants[0]]["height"] / 2
-        ):
-            await self.update_game_score(
-                self.current_participants[1], self.current_participants[0]
+            top_paddle_mid = self.paddles[self.current_participants[1]]["y"] - (
+                self.paddles[self.current_participants[1]]["height"] / 2 + 10
             )
+            if ball["y"] < top_paddle_mid:
+                await self.update_game_score(
+                    self.current_participants[0], self.current_participants[1]
+                )
+            elif ball["y"] > bottom_paddle_mid:
+                await self.update_game_score(
+                    self.current_participants[1], self.current_participants[0]
+                )
         await self.check_paddle_collision()
 
     async def move_paddle(self, paddle_owner, direction):
