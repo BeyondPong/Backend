@@ -44,7 +44,9 @@ class GameResultView(APIView):
                 user2_score=serializer.validated_data["user2_score"],
                 game_type=serializer.validated_data["game_type"],
             )
-            game.save()
+            if (request.user == game.user1 and game.user1_score > game.user2_score) or \
+                    (request.user == game.user2 and game.user2_score > game.user1_score):
+                game.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
