@@ -24,6 +24,13 @@ paddle_width = grid * 6
 ball_speed = 6
 paddle_speed = 6
 
+# todo
+#  2. 토너먼트 배열 → 역할 부여
+#  3. player 게임이 끝난 후 관전자에 있는 클라이언트와 player에 있는 클라이언트 역할 순서 바꾸기 ⇒ 캐시
+#  4. 재귀함수가 True/False만으로 제어 가능한지 확인 -> 관련 로직 수정
+# done
+#  1. running_user는 back에서 관리 및 running_user 역할 부여 삭제했던 부분 다시 추가
+
 
 class GameConsumer(AsyncWebsocketConsumer):
     # global_data in class
@@ -85,12 +92,15 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # todo Tournament에 대한 게임 시작 로직 추가(위치 변경)
         if self.mode == "REMOTE" and len(current_participants) == 2:
+            # todo: tournament에서는 이 설정을 추가로 해야 하며, 다음 단계의 게임에서도 다시 설정해야 함
+            self.running_user = True
             GameConsumer.running[self.room_group_name] = False
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
                     "type": "broadcast_event",
                     "event_type": "start_game",
+                    # delete: running_user로 관리
                     "data": {"first_user": current_participants[0]},
                 },
             )
@@ -155,8 +165,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             windows = cache.get(f"{self.room_name}_windows")
             game_width = min(windows["width"])
             game_height = min(windows["height"])
-            await self.game_settings(game_width, game_height, data["running_user"])
-            if data["running_user"]:
+            await self.game_settings(game_width, game_height)
+            if self.running_user:
                 asyncio.create_task(self.start_ball_movement())
 
         elif action == "move_paddle":
@@ -190,17 +200,16 @@ class GameConsumer(AsyncWebsocketConsumer):
             logger.debug("4명이 다 들어왔습니다!")
             serialized_nicknames = await self.serialize_nicknames(current_nicknames)
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
-            first_nickname = current_nicknames[0][0]
+            # todo: BE에서 running_user 관리 >> 역할 부여 후 다시 변경해야 함
+            if self.nickname == current_nicknames[0][1]:
+                self.running_user = True
             logger.debug(f"serialized_nicknames: {serialized_nicknames}")
-            logger.debug(f"first_user: {first_nickname}")
-
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
                     "type": "broadcast_event",
                     "event_type": "start_game",
                     "data": {
-                        "first_user": first_nickname,
                         "nicknames": serialized_nicknames,
                     },
                 },
@@ -208,7 +217,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         await self.send_nickname_validation(current_nicknames)
 
-    async def game_settings(self, game_width, game_height, running_user):
+    async def game_settings(self, game_width, game_height):
         self.game_width = game_width
         self.game_height = game_height
         self.paddle_width = paddle_width
@@ -228,7 +237,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.init_data()
         self.scores = {nickname: 0 for nickname in current_participants}
         self.game_ended = False
-        if running_user:
+        if self.running_user:
             GameConsumer.running[self.room_group_name] = True
             await self.send_game_data("game_start")
 
@@ -327,10 +336,12 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.init_data()
         await self.send_game_data("game_restart")
         GameConsumer.running[self.room_group_name] = True
+        # todo: 토너먼트에서는 재시작에 대해 밑의 로직을 실행해야 함
         # if self.running_user:
         #     asyncio.create_task(self.start_ball_movement())
 
     async def end_game(self, winner, loser):
+        self.running_user = False
         self.game_ended = True
 
         end_game_data = {
