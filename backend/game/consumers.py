@@ -86,6 +86,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # todo Tournament에 대한 게임 시작 로직 추가(위치 변경)
         if self.mode == "REMOTE" and len(self.current_participants) == 2:
+            GameConsumer.running[self.room_group_name] = False
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -140,10 +141,23 @@ class GameConsumer(AsyncWebsocketConsumer):
                 nickname = self.nickname
                 await self.check_nickname(tournament_nickname, nickname)
 
-        elif action == "start_game":
-            await self.game_settings(
-                data["width"], data["height"], data["running_user"]
+        elif action == "set_board":
+            # 창 크기 정보 캐시에서 가져오거나 초기화
+            windows = cache.get(
+                f"{self.room_name}_windows", {"width": [], "height": []}, timeout=3600
             )
+            game_width = data["width"]
+            game_height = data["height"]
+            # 현재 게임 창 크기 추가
+            windows["width"].append(game_width)
+            windows["height"].append(game_height)
+            cache.set(f"{self.room_name}_windows", windows)
+
+        elif action == "start_game":
+            windows = cache.get(f"{self.room_name}_windows")
+            game_width = min(windows["width"])
+            game_height = min(windows["height"])
+            await self.game_settings(game_width, game_height, data["running_user"])
             if data["running_user"]:
                 asyncio.create_task(self.start_ball_movement())
 
@@ -197,11 +211,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.scores = {nickname: 0 for nickname in self.current_participants}
         self.game_ended = False
         if running_user:
-            self.running_user = True
             GameConsumer.running[self.room_group_name] = True
             await self.send_game_data("game_start")
-        else:
-            self.running_user = False
 
     async def update_ball_position(self):
         ball = self.ball_position
@@ -397,6 +408,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def send_game_data(self, event_type):
         game_data = {
+            "game_width": self.game_width,
+            "game_height": self.game_height,
             "ball_position": self.ball_position,
             "ball_velocity": self.ball_velocity,
             "paddles": [paddle for paddle in self.paddles.values()],
