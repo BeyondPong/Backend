@@ -144,7 +144,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         elif action == "set_board":
             # 창 크기 정보 캐시에서 가져오거나 초기화
             windows = cache.get(
-                f"{self.room_name}_windows", {"width": [], "height": []}, timeout=3600
+                f"{self.room_name}_windows", {"width": [], "height": []}
             )
             game_width = data["width"]
             game_height = data["height"]
