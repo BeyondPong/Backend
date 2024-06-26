@@ -32,6 +32,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
     ** constructor
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # connect
@@ -57,6 +58,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
     connect & disconnect method
     """
+
     async def connect(self):
         # JWT 토큰 확인 및 사용자 인증
         token_key = self.scope["query_string"].decode().split("=")[1]
@@ -103,7 +105,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             await self.send_nickname_validation(current_nicknames)
 
-        if self.mode == "REMOTE":   # TOURNAMENT이면서 본인이 player일때 조건 추가
+        if self.mode == "REMOTE":  # TOURNAMENT이면서 본인이 player일때 조건 추가
             GameConsumer.running[self.room_group_name] = False
             participants = cache.get(f"{self.room_name}_participants")
             if not participants:
@@ -112,10 +114,8 @@ class GameConsumer(AsyncWebsocketConsumer):
     def remove_nickname_from_cache(self):
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
         nickname = self.scope["user"].nickname
-        logger.debug("nickname : %s", nickname)
         current_nicknames = [n for n in current_nicknames if n[1] != nickname]
         cache.set(f"{self.room_name}_nicknames", current_nicknames)
-        logger.debug(f"Updated nicknames in {self.room_name}: {current_nicknames}")
 
     def remove_participant_from_cache(self):
         self.current_participants = [
@@ -129,18 +129,21 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
     ** receive method (from frontend-action)
     """
+
     async def receive(self, text_data):
         data = json.loads(text_data)
         action = data["type"]
 
         if action == "check_nickname":
             if self.mode == "TOURNAMENT":
-                nickname = data["nickname"]
-                realname = self.nickname
-                await self.check_nickname(nickname, realname)
+                tournament_nickname = data["nickname"]
+                nickname = self.nickname
+                await self.check_nickname(tournament_nickname, nickname)
 
         elif action == "start_game":
-            await self.game_settings(data["width"], data["height"], data["running_user"])
+            await self.game_settings(
+                data["width"], data["height"], data["running_user"]
+            )
             if data["running_user"]:
                 asyncio.create_task(self.start_ball_movement())
 
@@ -155,18 +158,19 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
     ** action method
     """
-    async def check_nickname(self, nickname, realname):
+
+    async def check_nickname(self, tournament_nickname, nickname):
         # todo: cache.get 필요없으면 제거
         self.current_participants = cache.get(f"{self.room_name}_participants", [])
         logger.debug(f"Participants: {self.current_participants}")
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
 
-        if any(nick == nickname for nick, _ in current_nicknames):
+        if any(nick == tournament_nickname for nick, _ in current_nicknames):
             await self.send(text_data=json.dumps({"valid": False}))
             return
 
-        if realname in self.current_participants:
-            current_nicknames.append((nickname, realname))
+        if nickname in self.current_participants:
+            current_nicknames.append((tournament_nickname, nickname))
             cache.set(f"{self.room_name}_nicknames", current_nicknames)
             logger.debug(f"current_nicknames: {current_nicknames}")
 
@@ -213,16 +217,24 @@ class GameConsumer(AsyncWebsocketConsumer):
             ball["x"] = self.game_width - grid * 2
             ball_velocity["x"] *= -1
 
-        # if ball["y"] < 0:
-        if ball["y"] < self.paddles[self.current_participants[1]]["y"] - (self.paddles[self.current_participants[1]]["height"] / 2):
-            await self.update_game_score(
-                self.current_participants[0], self.current_participants[1]
+        if (
+            self.current_participants[0] in self.paddles
+            and self.current_participants[1] in self.paddles
+        ):
+            bottom_paddle_mid = self.paddles[self.current_participants[0]]["y"] + (
+                self.paddles[self.current_participants[0]]["height"] / 2 + 10
             )
-        # elif ball["y"] > self.game_height:
-        elif ball["y"] > self.paddles[self.current_participants[0]]["y"] + (self.paddles[self.current_participants[0]]["height"] / 2):
-            await self.update_game_score(
-                self.current_participants[1], self.current_participants[0]
+            top_paddle_mid = self.paddles[self.current_participants[1]]["y"] - (
+                self.paddles[self.current_participants[1]]["height"] / 2 + 10
             )
+            if ball["y"] < top_paddle_mid:
+                await self.update_game_score(
+                    self.current_participants[0], self.current_participants[1]
+                )
+            elif ball["y"] > bottom_paddle_mid:
+                await self.update_game_score(
+                    self.current_participants[1], self.current_participants[0]
+                )
         await self.check_paddle_collision()
 
     async def move_paddle(self, paddle_owner, direction):
@@ -308,6 +320,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
     ** util method
     """
+
     @database_sync_to_async
     def get_user_from_jwt(self, token_key):
         try:
@@ -367,6 +380,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
     ** send to group method
     """
+
     async def send_nickname_validation(self, current_nicknames):
         serialized_nicknames = await self.serialize_nicknames(current_nicknames)
         await self.channel_layer.group_send(
@@ -428,12 +442,13 @@ class GameConsumer(AsyncWebsocketConsumer):
                 "type": "broadcast_event",
                 "event_type": "update_score",
                 "data": game_score,
-            }
+            },
         )
 
     """
     ** custom broadcast method (default: broadcast_event)
     """
+
     async def broadcast_event(self, event):
         event_type = event["event_type"]
         await self.send(
@@ -478,6 +493,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
     ** coroutine method
     """
+
     async def start_ball_movement(self):
         while GameConsumer.running[self.room_group_name]:
             await self.update_ball_position()
