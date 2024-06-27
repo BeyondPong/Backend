@@ -121,20 +121,32 @@ class GameConsumer(AsyncWebsocketConsumer):
             )
 
     async def disconnect(self, close_code):
+        users = cache.get(f"{self.room_name}_participants", [])
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
         await sync_to_async(self.remove_participant_from_cache)()
-
+        await self.check_end_game(users)
         if self.mode == "TOURNAMENT":
             await sync_to_async(self.remove_nickname_from_cache)()
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             await self.send_nickname_validation(current_nicknames)
+            if len(current_nicknames) == 0:
+                cache.delete(f"{self.room_name}_nicknames")
 
-        if self.mode == "REMOTE":  # TOURNAMENT이면서 본인이 player일때 조건 추가
-            GameConsumer.running[self.room_group_name] = False
-            participants = cache.get(f"{self.room_name}_participants")
+        if self.mode == "REMOTE":
+            participants = cache.get(f"{self.room_name}_participants", None)
             if not participants:
                 del GameConsumer.running[self.room_group_name]
+
+    async def check_end_game(self, users):
+        if (len(users["players"]) == 0) or (len(users["players"]) == 1):
+            return
+
+        if self.nickname in users["players"]:
+            opponent = next(p for p in users["players"] if p != self.nickname)
+            GameConsumer.running[self.room_group_name] = False
+            self.scores[opponent] = 7
+            await self.end_game(opponent, self.nickname)
 
     def remove_nickname_from_cache(self):
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
@@ -147,7 +159,13 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_participants["players"] = [
             p for p in current_participants["players"] if p != self.nickname
         ]
-        cache.set(f"{self.room_name}_participants", current_participants)
+        if (len(current_participants["players"]) == 0) and (
+            len(current_participants["spectators"]) == 0
+        ):
+            cache.delete(f"{self.room_name}_participants")
+        else:
+            cache.set(f"{self.room_name}_participants", current_participants)
+
         logger.debug(
             f"Updated participants in {self.room_name}: {current_participants}"
         )
