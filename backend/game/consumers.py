@@ -24,17 +24,11 @@ paddle_width = grid * 6
 ball_speed = 6
 paddle_speed = 6
 
-# todo
-#  3. player 게임이 끝난 후 관전자에 있는 클라이언트와 player에 있는 클라이언트 역할 순서 바꾸기 ⇒ 캐시
-#  4. 재귀함수가 True/False만으로 제어 가능한지 확인 -> 관련 로직 수정
-# done
-#  1. running_user는 back에서 관리 및 running_user 역할 부여 삭제했던 부분 다시 추가
-#  2. 토너먼트 배열 → 역할 부여
-
 
 class GameConsumer(AsyncWebsocketConsumer):
     # global_data in class
     running = {}
+    is_final = {}
 
     """
     ** constructor
@@ -59,7 +53,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.running_user = False
         self.paddles = {}
         self.scores = {}
-        self.game_ended = False
+        self.game_ended = False  # delete(?)
 
     """
     connect & disconnect method
@@ -110,6 +104,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             # todo: tournament에서는 이 설정을 추가로 해야 하며, 다음 단계의 게임에서도 다시 설정해야 함
             self.running_user = True
             GameConsumer.running[self.room_group_name] = False
+            GameConsumer.is_final[self.room_group_name] = True
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -236,6 +231,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if len(current_nicknames) == 4:
             logger.debug("4명이 다 들어왔습니다!")
+            GameConsumer.is_final[self.room_group_name] = False
             serialized_nicknames = await self.serialize_nicknames(current_nicknames)
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             nickname_mapping = {real: tourney for tourney, real in current_nicknames}
@@ -287,7 +283,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         # 참가자 목록 업데이트
         current_participants = cache.get(f"{self.room_name}_participants")
 
-        # 게임 시작하기 직전에 방 나간 경우(?)
+        # 게임 시작하기 직전에 방 나간 경우 -> 토너먼트에서 몰수패 처리 해야하는 부분
         # if len(current_participants["players"]) < 2:
         #     GameConsumer.running[self.room_group_name] = False
         #     self.game_ended = True
@@ -407,6 +403,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.game_ended = True
 
         end_game_data = {
+            "is_final": GameConsumer.is_final[self.room_group_name],
             "winner": winner,
             "loser": loser,
             "scores": self.scores,
@@ -487,11 +484,16 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def prepare_next_tournament(self, winner, loser):
         self.running_user = False
         current_participants = cache.get(f"{self.room_name}_participants")
+        winners = cache.get(f"{self.room_name}_winners", [])
+        losers = cache.get(f"{self.room_name}_losers", [])
+
+        # winner == 2: is_final
+        if len(winners) == 2:
+            GameConsumer.is_final[self.room_group_name] = True
+
         if len(current_participants["spectators"]) == 2:  # 관전자 플레이 할 차례
             # players 애들을 winners, losers 배열 만들고 이동
             # spectators 에 있는 애들을 players로 이동
-            winners = cache.get(f"{self.room_name}_winners", [])
-            losers = cache.get(f"{self.room_name}_losers", [])
             winners.append(winner)
             losers.append(loser)
 
@@ -525,10 +527,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             # )
         elif (
             len(current_participants["spectators"]) == 1
-        ):  # winner도 넣고 spectators[0]도 넣고 -> 그럼 바로 결승
+        ):  # 첫 토너먼트 중 관전자 1명이 나간 경우 -> winner에 넣기
             # 관전자 1명이면 바로 winners에 넣기
             # winners배열의 len이 2면 결승 시작
-            winners = cache.get(f"{self.room_name}_winners", [])
             winners.append(winner)
             winners.append(current_participants["spectators"][0])
             cache.set(f"{self.room_name}_winners", winners)
@@ -552,6 +553,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
 
     async def send_game_data(self, event_type):
+        logger.debug(f"**is_final: {GameConsumer.is_final[self.room_group_name]}")
         current_participants = cache.get(f"{self.room_name}_participants")
         players = current_participants["players"]
         logger.debug(f"players(tournament): {players}")
