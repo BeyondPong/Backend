@@ -398,6 +398,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 "data": end_game_data,
             },
         )
+        if self.mode == "TOURNAMENT":
+            await self.prepare_next_tournament(winner, loser)
 
     """
     ** util method
@@ -460,6 +462,55 @@ class GameConsumer(AsyncWebsocketConsumer):
             "height": grid,
         }
 
+    async def prepare_next_tournament(self, winner, loser):
+        self.running_user = False
+        current_participants = cache.get(f"{self.room_name}_participants")
+        if len(current_participants["spectators"]) == 2:  # 관전자 플레이 할 차례
+            # players 애들을 winners, losers 배열 만들고 이동
+            # spectators 에 있는 애들을 players로 이동
+            winners = cache.get(f"{self.room_name}_winners", [])
+            losers = cache.get(f"{self.room_name}_losers", [])
+            winners.append(winner)
+            losers.append(loser)
+
+            cache.set(f"{self.room_name}_winners", winners)
+            cache.set(f"{self.room_name}_losers", losers)
+
+            new_players = current_participants["spectators"]
+            current_participants["players"] = new_players
+            current_participants["spectators"] = []
+
+            cache.set(f"{self.room_name}_participants", current_participants)
+
+            # running_user 권한 줘야함.
+            new_running_user = current_participants["players"][0]
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "broadcast_next_tournament",
+                    "event_type": "next_round",  # next_round
+                    "running_user_nickname": new_running_user,
+                },
+            )
+            # await self.channel_layer.group_send(
+            #     self.room_group_name,
+            #     {
+            #         "type": "broadcast_next_tournament",
+            #         "event_type": "start_game",  # next_round
+            #         "data": {"nicknames": serialized_nicknames},
+            #         "running_user_nickname": new_running_user,
+            #     },
+            # )
+        elif (
+            len(current_participants["spectators"]) == 1
+        ):  # winner도 넣고 spectators[0]도 넣고 -> 그럼 바로 결승
+            # 관전자 1명이면 바로 winners에 넣기
+            # winners배열의 len이 2면 결승 시작
+            winners = cache.get(f"{self.room_name}_winners", [])
+            winners.append(winner)
+            winners.append(current_participants["spectators"][0])
+            cache.set(f"{self.room_name}_winners", winners)
+
     """
     ** send to group method
     """
@@ -479,12 +530,24 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
 
     async def send_game_data(self, event_type):
+        current_participants = cache.get(f"{self.room_name}_participants")
+        current_nicknames = cache.get(f"{self.room_name}_nicknames")
+        if self.mode == "REMOTE":
+            players = current_participants["players"]
+        elif self.mode == "TOURNAMENT":
+            players = [
+                tournament_nickname
+                for tournament_nickname, real_nickname in current_nicknames
+                if real_nickname in current_participants["players"]
+            ]
+            logger.debug(f"players(tournament): {players}")
         game_data = {
             "game_width": self.game_width,
             "game_height": self.game_height,
             "ball_position": self.ball_position,
             "ball_velocity": self.ball_velocity,
             "paddles": [paddle for paddle in self.paddles.values()],
+            "players": players,
             "scores": self.scores,
         }
         await self.channel_layer.group_send(
@@ -574,6 +637,15 @@ class GameConsumer(AsyncWebsocketConsumer):
     #     await self.send(
     #         text_data=json.dumps({"type": event_type, "data": event["data"]})
     #     )
+
+    async def broadcast_next_tournament(self, event):
+        event_type = event["event_type"]
+        running_user_nickname = event["running_user_nickname"]
+        if self.nickname == running_user_nickname:
+            self.running_user = True
+        else:
+            self.running_user = False
+        await self.send(text_data=json.dumps({"type": event_type}))
 
     """
     ** coroutine method
