@@ -139,7 +139,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 del GameConsumer.running[self.room_group_name]
 
     async def check_end_game(self, users):
-        if (len(users) == 0) or (len(users) == 1):
+        if (len(users["players"]) == 0) or (len(users["players"]) == 1):
             return
 
         if self.nickname in users["players"]:
@@ -159,7 +159,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_participants["players"] = [
             p for p in current_participants["players"] if p != self.nickname
         ]
-        if (len(current_participants["players"]) == 0) and (len(current_participants["spectators"]) == 0):
+        if (len(current_participants["players"]) == 0) and (
+            len(current_participants["spectators"]) == 0
+        ):
             cache.delete(f"{self.room_name}_participants")
         else:
             cache.set(f"{self.room_name}_participants", current_participants)
@@ -225,8 +227,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             return
 
         if (
-                nickname in current_participants["players"]
-                or nickname in current_participants["spectators"]
+            nickname in current_participants["players"]
+            or nickname in current_participants["spectators"]
         ):
             current_nicknames.append((tournament_nickname, nickname))
             cache.set(f"{self.room_name}_nicknames", current_nicknames)
@@ -293,14 +295,14 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         current_participants = cache.get(f"{self.room_name}_participants")
         if (
-                current_participants["players"][0] in self.paddles
-                and current_participants["players"][1] in self.paddles
+            current_participants["players"][0] in self.paddles
+            and current_participants["players"][1] in self.paddles
         ):
             bottom_paddle_mid = self.paddles[current_participants["players"][0]][
-                                    "y"
-                                ] + (self.paddles[current_participants["players"][0]]["height"] / 2 + 10)
+                "y"
+            ] + (self.paddles[current_participants["players"][0]]["height"] / 2 + 10)
             top_paddle_mid = self.paddles[current_participants["players"][1]]["y"] - (
-                    self.paddles[current_participants["players"][1]]["height"] / 2 + 10
+                self.paddles[current_participants["players"][1]]["height"] / 2 + 10
             )
             if ball["y"] < top_paddle_mid:
                 await self.update_game_score(
@@ -340,18 +342,18 @@ class GameConsumer(AsyncWebsocketConsumer):
             bottom_paddle = None
 
         if top_paddle and (
-                ball["y"] <= top_paddle["y"] + top_paddle["height"]
-                and ball["x"] + grid > top_paddle["x"]
-                and ball["x"] < top_paddle["x"] + top_paddle["width"]
+            ball["y"] <= top_paddle["y"] + top_paddle["height"]
+            and ball["x"] + grid > top_paddle["x"]
+            and ball["x"] < top_paddle["x"] + top_paddle["width"]
         ):
             ball_velocity["y"] *= -1
             hit_pos = (ball["x"] - top_paddle["x"]) / top_paddle["width"]
             ball_velocity["x"] = (hit_pos - 0.5) * 2 * ball_speed
 
         if bottom_paddle and (
-                ball["y"] + grid >= bottom_paddle["y"]
-                and ball["x"] + grid > bottom_paddle["x"]
-                and ball["x"] < bottom_paddle["x"] + bottom_paddle["width"]
+            ball["y"] + grid >= bottom_paddle["y"]
+            and ball["x"] + grid > bottom_paddle["x"]
+            and ball["x"] < bottom_paddle["x"] + bottom_paddle["width"]
         ):
             ball_velocity["y"] *= -1
             hit_pos = (ball["x"] - bottom_paddle["x"]) / bottom_paddle["width"]
