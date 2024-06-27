@@ -38,19 +38,27 @@ class OAuth42SocialLoginView(APIView):
         # get 'code' from request body
         code = request.data.get("code")
         if not code:
-            return Response({"error": "Authorization-code parameter is undefined"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Authorization-code parameter is undefined"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # get token-data from _get_access_token
         token_data = self._get_access_token(code)
         if not token_data:
-            return Response({"error": "Fail to obtain tokens(access, refresh)"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Fail to obtain tokens(access, refresh)"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         access_token = token_data.get("access_token")
         refresh_token = token_data.get("refresh_token")
 
         # get user_info with access_token
         user_info = self._get_user_info(access_token)
         if not user_info:
-            return Response({"error": "Fail to fetch user info"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Fail to fetch user info"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         # save user-info if not in Member-DB
         user = self._login_or_signup(user_info)
@@ -60,7 +68,10 @@ class OAuth42SocialLoginView(APIView):
         # get jwt-token from user-info(for send FE)
         jwt_token = self._create_jwt_token(user)
         if not jwt_token:
-            return Response({"error": "Fail to create jwt token"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Fail to create jwt token"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         logger.debug("========== [LOGIN] SUCCESS: for getting user-info ==========")
         return Response({"token": jwt_token})
@@ -83,7 +94,7 @@ class OAuth42SocialLoginView(APIView):
         token_json = token_req.json()
         token_data = {
             "access_token": token_json.get("access_token"),
-            "refresh_token": token_json.get("refresh_token")
+            "refresh_token": token_json.get("refresh_token"),
         }
         return token_data
 
@@ -91,9 +102,7 @@ class OAuth42SocialLoginView(APIView):
     def _get_user_info(self, access_token):
         # get-requests for getting user-info
         api_url = settings.OAUTH_API_URL
-        headers = {
-            "Authorization": f"Bearer {access_token}"
-        }
+        headers = {"Authorization": f"Bearer {access_token}"}
 
         response = requests.get(api_url, headers=headers)
         if response.status_code != 200:
@@ -106,10 +115,10 @@ class OAuth42SocialLoginView(APIView):
         nickname = user_info.get("login")
 
         users = Member.objects.filter(nickname=nickname)
-        if users.exists():      # origin user
+        if users.exists():  # origin user
             user = users.first()
             logger.debug("========== ALREADY EXIST USER ==========")
-        else:                   # new user
+        else:  # new user
             try:
                 user = Member.objects.create_user(
                     email=email,
@@ -130,7 +139,9 @@ class OAuth42SocialLoginView(APIView):
             "2fa": "false",
         }
         try:
-            jwt_token = jwt.encode(payload, settings.OAUTH_CLIENT_SECRET, algorithm="HS256")
+            jwt_token = jwt.encode(
+                payload, settings.OAUTH_CLIENT_SECRET, algorithm="HS256"
+            )
             logger.debug("========== CREATE JWT TOKEN ==========")
             return jwt_token
         except Exception as e:
@@ -141,7 +152,7 @@ class OAuth42SocialLoginView(APIView):
 """
 [ Status for user ]
 1. FE >> before Two Factor check if user registered >> BE
-   BE >> check cache >> get status(new or origin) >> FE
+   BE >> check cache >> get status(new or origin) and email(intra-email for 2FA) >> FE
 """
 
 
@@ -158,12 +169,12 @@ class RegistrationStatusView(APIView):
             cache.delete(f"status_{request.user.nickname}")
         logger.debug(f"{request.user.nickname}: {user_status}")
 
-        return Response({"status": user_status})
+        return Response({"status": user_status, "email": request.user.email})
 
 
 """
 [ Two Factor flow ]
-1. FE >> req(email) >> BE
+1. FE >> req(send or resend) >> BE
    BE >> send-email, save in cache(expired 3minutes) >> email
    BE >> message(success!) >> FE
 2. FE >> req(verification_code) >> BE
@@ -178,14 +189,9 @@ class TwoFactorSendCodeView(APIView):
 
     def post(self, request):
         logger.debug("========== 2FA REQUEST FOR SENDING EMAIL ==========")
-        # get email from front-request-body
-        email = request.data.get("email")
-        if not email:
-            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
-
         # generate 2FA code and send email
         two_fa_code = self._generate_2fa_code()
-        self._send_2fa_code_mail(email, two_fa_code)
+        self._send_2fa_code_mail(request.user.email, two_fa_code)
 
         # save 2fa code to Redis with an expiration time (3 minutes)
         cache.set(f"2fa_code_{request.user.nickname}", two_fa_code, timeout=180)
@@ -224,13 +230,19 @@ class TwoFactorVerifyCodeView(APIView):
         # get verify-code
         verification_code = request.data.get("verification_code")
         if not verification_code:
-            return Response({"error": "Verification code are required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Verification code are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # check stored-code(from cache) with verify-code(from request-body)
         user = request.user
         stored_code = cache.get(f"2fa_code_{user.nickname}")
         if not stored_code or stored_code != verification_code:
-            return Response({"error": "Invalid or expired 2FA code"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Invalid or expired 2FA code"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # delete stored-code from cache
         cache.delete(f"2fa_code_{user.nickname}")
@@ -238,7 +250,10 @@ class TwoFactorVerifyCodeView(APIView):
         # get new jwt-token
         new_jwt_token = self._create_new_jwt_token(user)
         if not new_jwt_token:
-            return Response({"error": "Fail to create new jwt token"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Fail to create new jwt token"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         logger.debug("========== SUCCESS 2FA AUTHENTICATION ==========")
         return Response({"token": new_jwt_token})
@@ -250,7 +265,9 @@ class TwoFactorVerifyCodeView(APIView):
             "2fa": "true",
         }
         try:
-            jwt_token = jwt.encode(payload, settings.OAUTH_CLIENT_SECRET, algorithm="HS256")
+            jwt_token = jwt.encode(
+                payload, settings.OAUTH_CLIENT_SECRET, algorithm="HS256"
+            )
             logger.debug("========== CREATE !!NEW!! JWT TOKEN ==========")
             return jwt_token
         except Exception as e:
