@@ -17,6 +17,8 @@ class GameConfig(AppConfig):
         cache.delete_pattern("*_participants")
         cache.delete_pattern("game_room_*_participants")
         cache.delete_pattern("*_windows")
+        cache.delete_pattern("*_winners")
+        cache.delete_pattern("*_losers")
         print("Cleared all game-related cache data")
 
         redis_client = redis.StrictRedis(host="redis", port=6379, db=0)
