@@ -238,10 +238,32 @@ class GameConsumer(AsyncWebsocketConsumer):
             logger.debug("4명이 다 들어왔습니다!")
             serialized_nicknames = await self.serialize_nicknames(current_nicknames)
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+            nickname_mapping = {real: tourney for tourney, real in current_nicknames}
+
             # todo: BE에서 running_user 관리 >> 역할 부여 후 다시 변경해야 함
             if self.nickname == current_nicknames[0][1]:
                 self.running_user = True
             logger.debug(f"serialized_nicknames: {serialized_nicknames}")
+
+            current_participants = cache.get(
+                f"{self.room_name}_participants", {"players": [], "spectators": []}
+            )
+
+            # Update players with tournament nicknames
+            updated_players = [
+                nickname_mapping.get(nickname, nickname)
+                for nickname in current_participants["players"]
+            ]
+            # Update spectators with tournament nicknames
+            updated_spectators = [
+                nickname_mapping.get(nickname, nickname)
+                for nickname in current_participants["spectators"]
+            ]
+
+            current_participants["players"] = updated_players
+            current_participants["spectators"] = updated_spectators
+
+            cache.set(f"{self.room_name}_participants", current_participants)
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -531,16 +553,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def send_game_data(self, event_type):
         current_participants = cache.get(f"{self.room_name}_participants")
-        current_nicknames = cache.get(f"{self.room_name}_nicknames")
-        if self.mode == "REMOTE":
-            players = current_participants["players"]
-        elif self.mode == "TOURNAMENT":
-            players = [
-                tournament_nickname
-                for tournament_nickname, real_nickname in current_nicknames
-                if real_nickname in current_participants["players"]
-            ]
-            logger.debug(f"players(tournament): {players}")
+        players = current_participants["players"]
+        logger.debug(f"players(tournament): {players}")
         game_data = {
             "game_width": self.game_width,
             "game_height": self.game_height,
