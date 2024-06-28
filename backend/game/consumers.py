@@ -276,6 +276,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                     },
                 },
             )
+        self.nickname = tournament_nickname  # 토너먼트면 self.nickname까지 tournament_nickname으로 변경
 
         await self.send_nickname_validation(current_nicknames)
 
@@ -490,11 +491,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         winners = cache.get(f"{self.room_name}_winners", [])
         losers = cache.get(f"{self.room_name}_losers", [])
 
-        # winner == 2: is_final
-        if len(winners) == 2:
-            GameConsumer.is_final[self.room_name] = True
-
-        if len(current_participants["spectators"]) == 2:  # 관전자 플레이 할 차례
+        if len(current_participants["spectators"]) == 2:  # 4갈 2경기
             # players 애들을 winners, losers 배열 만들고 이동
             # spectators 에 있는 애들을 players로 이동
             winners.append(winner)
@@ -519,23 +516,22 @@ class GameConsumer(AsyncWebsocketConsumer):
                     "running_user_nickname": new_running_user,
                 },
             )
-            # await self.channel_layer.group_send(
-            #     self.room_group_name,
-            #     {
-            #         "type": "broadcast_next_tournament",
-            #         "event_type": "start_game",  # next_round
-            #         "data": {"nicknames": serialized_nicknames},
-            #         "running_user_nickname": new_running_user,
-            #     },
-            # )
-        elif (
-            len(current_participants["spectators"]) == 1
-        ):  # 첫 토너먼트 중 관전자 1명이 나간 경우 -> winner에 넣기
-            # 관전자 1명이면 바로 winners에 넣기
-            # winners배열의 len이 2면 결승 시작
+        elif len(winners) == 1 and len(current_participants["players"]) == 2:  # 파이널
+            GameConsumer.is_final[self.room_name] = True
             winners.append(winner)
-            winners.append(current_participants["spectators"][0])
+            losers.append(loser)
             cache.set(f"{self.room_name}_winners", winners)
+            cache.set(f"{self.room_name}_losers", losers)
+            current_participants["players"] = winners
+            cache.set(f"{self.room_name}_participants", current_participants)
+        # elif (
+        #     len(current_participants["spectators"]) == 1
+        # ):  # 첫 토너먼트 중 관전자 1명이 나간 경우 -> winner에 넣기
+        #     # 관전자 1명이면 바로 winners에 넣기
+        #     # winners배열의 len이 2면 결승 시작
+        #     winners.append(winner)
+        #     winners.append(current_participants["spectators"][0])
+        #     cache.set(f"{self.room_name}_winners", winners)
 
     """
     ** send to group method
