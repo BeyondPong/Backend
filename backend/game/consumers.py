@@ -95,6 +95,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         # dictionary setting for variables(running, is_final)
         GameConsumer.running[self.room_name] = False
         GameConsumer.is_final[self.room_name] = False
+        if self.mode == "REMOTE":
+            GameConsumer.is_final[self.room_name] = True
 
         cache.set(f"{self.room_name}_participants", current_participants)
 
@@ -107,8 +109,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.mode == "REMOTE" and len(current_participants["players"]) == 2:
             # todo: tournament에서는 이 설정을 추가로 해야 하며, 다음 단계의 게임에서도 다시 설정해야 함
             self.running_user = True
-            GameConsumer.running[self.room_name] = False
-            GameConsumer.is_final[self.room_name] = True
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -566,6 +566,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         players = current_participants["players"]
         logger.debug(f"players(tournament): {players}")
         game_data = {
+            "is_final": GameConsumer.is_final[self.room_name],
             "game_width": self.game_width,
             "game_height": self.game_height,
             "ball_position": self.ball_position,
