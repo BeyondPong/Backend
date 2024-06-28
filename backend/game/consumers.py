@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 grid = 15
 paddle_width = grid * 6
 ball_speed = 12
-paddle_speed = 12
+paddle_speed = 6
 
 
 class GameConsumer(AsyncWebsocketConsumer):
@@ -466,9 +466,15 @@ class GameConsumer(AsyncWebsocketConsumer):
         # send score
         await self.send_game_score()
 
+        current_participants = cache.get(f"{self.room_name}_participants")
+        if winner == self.paddles[current_participants["players"][0]]["nickname"]:
+            self.ball_velocity = {"x": 0, "y": 5}
+        else:
+            self.ball_velocity = {"x": 0, "y": -5}
+
         # sleep and restart_game(send restart game_data)
         await asyncio.sleep(2)
-        await self.init_data()
+        await self.init_data(True)
         await self.send_game_data("game_restart")
         GameConsumer.running[self.room_name] = True
 
@@ -536,10 +542,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             )
         return serialized_nicknames
 
-    async def init_data(self):
+    async def init_data(self, flag=False):
         current_participants = cache.get(f"{self.room_name}_participants")
         self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
-        self.ball_velocity = {"x": 5, "y": 5}
+        if flag is False:
+            self.ball_velocity = {"x": 0, "y": 5}
         self.paddles[current_participants["players"][0]] = {
             "nickname": current_participants["players"][0],
             "x": self.game_width / 2 - self.paddle_width / 2,
