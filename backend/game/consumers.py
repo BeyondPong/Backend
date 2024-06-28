@@ -105,9 +105,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
-        # todo Tournament에 대한 게임 시작 로직 추가(위치 변경)
         if self.mode == "REMOTE" and len(current_participants["players"]) == 2:
-            # todo: tournament에서는 이 설정을 추가로 해야 하며, 다음 단계의 게임에서도 다시 설정해야 함
             self.running_user = True
             await self.channel_layer.group_send(
                 self.room_group_name,
@@ -158,7 +156,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         cache.set(f"{self.room_name}_nicknames", current_nicknames)
 
     def remove_participant_from_cache(self):
-        current_participants = cache.get(f"{self.room_name}_participants")
+        current_participants = cache.get(f"{self.room_name}_participants", None)
+        if not current_participants:
+            return
         current_participants["players"] = [
             p for p in current_participants["players"] if p != self.nickname
         ]
@@ -220,7 +220,6 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
 
     async def check_nickname(self, tournament_nickname, nickname):
-        # todo: cache.get 필요없으면 제거
         current_participants = cache.get(f"{self.room_name}_participants")
         logger.debug(f"Participants: {current_participants}")
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
@@ -244,7 +243,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             nickname_mapping = {real: tourney for tourney, real in current_nicknames}
 
-            # todo: BE에서 running_user 관리 >> 역할 부여 후 다시 변경해야 함
             if self.nickname == current_nicknames[0][1]:
                 self.running_user = True
             logger.debug(f"serialized_nicknames: {serialized_nicknames}")
@@ -402,9 +400,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.init_data()
         await self.send_game_data("game_restart")
         GameConsumer.running[self.room_name] = True
-        # todo: 토너먼트에서는 재시작에 대해 밑의 로직을 실행해야 함
-        # if self.running_user:
-        #     asyncio.create_task(self.start_ball_movement())
 
     async def end_game(self, winner, loser):
         self.running_user = False
