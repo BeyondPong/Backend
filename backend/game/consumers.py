@@ -118,7 +118,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             )
 
     async def disconnect(self, close_code):
-        users = cache.get(f"{self.room_name}_participants", [])
+        users = cache.get(f"{self.room_name}_participants", None)
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
         await sync_to_async(self.remove_participant_from_cache)()
@@ -141,14 +141,15 @@ class GameConsumer(AsyncWebsocketConsumer):
                 del GameConsumer.running[self.room_name]
 
     async def check_end_game(self, users):
-        if (len(users["players"]) == 0) or (len(users["players"]) == 1):
+        if (not users or len(users["players"]) == 0) or (len(users["players"]) == 1):
             return
 
         if self.nickname in users["players"]:  # players가 나간 경우
             opponent = next(p for p in users["players"] if p != self.nickname)
             GameConsumer.running[self.room_name] = False
             self.scores[opponent] = 7
-            await self.end_game(opponent, self.nickname)
+            if GameConsumer.running[self.room_name] == True:
+                await self.end_game(opponent, self.nickname)
         elif len(users["spectators"]) == 2:  # spectators가 1명 나간 경우
             # 남은 spectators가 winner (남은 spectators가 나가더라도 winner는 이미 여기서 정해짐)
             winner = next(
