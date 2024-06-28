@@ -239,10 +239,7 @@ class TwoFactorVerifyCodeView(APIView):
         user = request.user
         stored_code = cache.get(f"2fa_code_{user.nickname}")
         if not stored_code or stored_code != verification_code:
-            return Response(
-                {"error": "Invalid or expired 2FA code"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"error": "Invalid or expired 2FA code"})
 
         # delete stored-code from cache
         cache.delete(f"2fa_code_{user.nickname}")
