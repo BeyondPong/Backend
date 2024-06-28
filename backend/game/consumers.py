@@ -92,6 +92,10 @@ class GameConsumer(AsyncWebsocketConsumer):
         # debugging
         logger.debug(f"current_participants: {current_participants}")
 
+        # dictionary setting for variables(running, is_final)
+        GameConsumer.running[self.room_name] = False
+        GameConsumer.is_final[self.room_name] = False
+
         cache.set(f"{self.room_name}_participants", current_participants)
 
         await sync_to_async(manage_participants)(self.room_name, increase=True)
@@ -103,8 +107,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.mode == "REMOTE" and len(current_participants["players"]) == 2:
             # todo: tournament에서는 이 설정을 추가로 해야 하며, 다음 단계의 게임에서도 다시 설정해야 함
             self.running_user = True
-            GameConsumer.running[self.room_group_name] = False
-            GameConsumer.is_final[self.room_group_name] = True
+            GameConsumer.running[self.room_name] = False
+            GameConsumer.is_final[self.room_name] = True
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -130,8 +134,12 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if self.mode == "REMOTE":
             participants = cache.get(f"{self.room_name}_participants", None)
-            if not participants:
-                del GameConsumer.running[self.room_group_name]
+            if (
+                participants
+                and len(participants["players"]) == 0
+                and len(participants["spectators"]) == 0
+            ):
+                del GameConsumer.running[self.room_name]
 
     async def check_end_game(self, users):
         if (len(users["players"]) == 0) or (len(users["players"]) == 1):
@@ -139,7 +147,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if self.nickname in users["players"]:
             opponent = next(p for p in users["players"] if p != self.nickname)
-            GameConsumer.running[self.room_group_name] = False
+            GameConsumer.running[self.room_name] = False
             self.scores[opponent] = 7
             await self.end_game(opponent, self.nickname)
 
@@ -200,7 +208,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 asyncio.create_task(self.start_ball_movement())
 
         elif action == "move_paddle":
-            if not GameConsumer.running[self.room_group_name]:
+            if not GameConsumer.running[self.room_name]:
                 return
             paddle_owner = data["paddle"]
             direction = data["direction"]
@@ -231,7 +239,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if len(current_nicknames) == 4:
             logger.debug("4명이 다 들어왔습니다!")
-            GameConsumer.is_final[self.room_group_name] = False
+            GameConsumer.is_final[self.room_name] = False
             serialized_nicknames = await self.serialize_nicknames(current_nicknames)
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             nickname_mapping = {real: tourney for tourney, real in current_nicknames}
@@ -285,7 +293,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # 게임 시작하기 직전에 방 나간 경우 -> 토너먼트에서 몰수패 처리 해야하는 부분
         # if len(current_participants["players"]) < 2:
-        #     GameConsumer.running[self.room_group_name] = False
+        #     GameConsumer.running[self.room_name] = False
         #     self.game_ended = True
         #     return
 
@@ -294,7 +302,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.scores = {nickname: 0 for nickname in current_participants["players"]}
         self.game_ended = False
         if self.running_user:
-            GameConsumer.running[self.room_group_name] = True
+            GameConsumer.running[self.room_name] = True
             await self.send_game_data("game_start")
 
     async def update_ball_position(self):
@@ -378,7 +386,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             ball_velocity["x"] = (hit_pos - 0.5) * 2 * ball_speed
 
     async def update_game_score(self, winner, loser):
-        GameConsumer.running[self.room_group_name] = False
+        GameConsumer.running[self.room_name] = False
         self.scores[winner] += 1
 
         # 게임 종료 조건(end_game 여기서만 call)
@@ -393,7 +401,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await asyncio.sleep(2)
         await self.init_data()
         await self.send_game_data("game_restart")
-        GameConsumer.running[self.room_group_name] = True
+        GameConsumer.running[self.room_name] = True
         # todo: 토너먼트에서는 재시작에 대해 밑의 로직을 실행해야 함
         # if self.running_user:
         #     asyncio.create_task(self.start_ball_movement())
@@ -403,7 +411,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.game_ended = True
 
         end_game_data = {
-            "is_final": GameConsumer.is_final[self.room_group_name],
+            "is_final": GameConsumer.is_final[self.room_name],
             "winner": winner,
             "loser": loser,
             "scores": self.scores,
@@ -489,7 +497,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # winner == 2: is_final
         if len(winners) == 2:
-            GameConsumer.is_final[self.room_group_name] = True
+            GameConsumer.is_final[self.room_name] = True
 
         if len(current_participants["spectators"]) == 2:  # 관전자 플레이 할 차례
             # players 애들을 winners, losers 배열 만들고 이동
@@ -553,7 +561,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
 
     async def send_game_data(self, event_type):
-        logger.debug(f"**is_final: {GameConsumer.is_final[self.room_group_name]}")
+        logger.debug(f"**is_final: {GameConsumer.is_final[self.room_name]}")
         current_participants = cache.get(f"{self.room_name}_participants")
         players = current_participants["players"]
         logger.debug(f"players(tournament): {players}")
@@ -668,7 +676,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
 
     async def start_ball_movement(self):
-        while GameConsumer.running[self.room_group_name]:
+        while GameConsumer.running[self.room_name]:
             await self.update_ball_position()
             await self.send_ball_position()
             await asyncio.sleep(0.01667)  # 60 FPS
