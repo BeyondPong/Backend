@@ -390,7 +390,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         current_participants = cache.get(f"{self.room_name}_participants")
         if (
-            current_participants["players"][0] in self.paddles
+            len(current_participants["players"]) == 2
+            and current_participants["players"][0] in self.paddles
             and current_participants["players"][1] in self.paddles
         ):
             bottom_paddle_mid = self.paddles[current_participants["players"][0]][
@@ -595,7 +596,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                     "running_user_nickname": new_running_user,
                 },
             )
-        elif len(winners) == 1 and len(current_participants["players"]) == 2:  # 파이널
+        elif (
+            len(winners) == 1 and len(current_participants["spectators"]) == 0
+        ):  # 파이널
             GameConsumer.is_final[self.room_name] = True
             winners.append(winner)
             losers.append(loser)
@@ -642,19 +645,6 @@ class GameConsumer(AsyncWebsocketConsumer):
                     "running_user_nickname": new_running_user,
                 },
             )
-        # elif len(current_participants["spectators"]) == 0:  # 첫번째 게임 후 2번경우
-        # GameConsumer.is_final[self.room_name] = True
-        # final_winner = winners[0]  # 최종 우승자
-        # group_send 해야할 거 같음
-
-        # elif (
-        #     len(current_participants["spectators"]) == 1
-        # ):  # 첫 토너먼트 중 관전자 1명이 나간 경우 -> winner에 넣기
-        #     # 관전자 1명이면 바로 winners에 넣기
-        #     # winners배열의 len이 2면 결승 시작
-        #     winners.append(winner)
-        #     winners.append(current_participants["spectators"][0])
-        #     cache.set(f"{self.room_name}_winners", winners)
 
     """
     ** send to group method
@@ -679,7 +669,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_participants = cache.get(f"{self.room_name}_participants")
         # 결승전 직전에 플레이어 중 누가 나간 경우 바뀌어야 함
         players = current_participants["players"]
-        if self.mode == "TOURNAMENT" and GameConsumer.is_final[self.room_name] == True:
+        if (
+            self.mode == "TOURNAMENT"
+            and GameConsumer.is_final[self.room_name] == True
+            and len(players) < 2
+        ):
             players = cache.get(f"{self.room_name}_winners", [])
         logger.debug(f"players(tournament): {players}")
         game_data = {
