@@ -146,10 +146,10 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if self.nickname in users["players"]:  # players가 나간 경우
             opponent = next(p for p in users["players"] if p != self.nickname)
-            GameConsumer.running[self.room_name] = False
             self.scores[opponent] = 7
             if GameConsumer.running[self.room_name] == True:
                 await self.end_game(opponent, self.nickname)
+            GameConsumer.running[self.room_name] = False
         elif len(users["spectators"]) == 2:  # spectators가 1명 나간 경우
             # 남은 spectators가 winner (남은 spectators가 나가더라도 winner는 이미 여기서 정해짐)
             winner = next(
