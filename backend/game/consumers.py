@@ -410,10 +410,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         ball_velocity = self.ball_velocity
 
         current_participants = cache.get(f"{self.room_name}_participants")
-        if current_participants["players"][1] in self.paddles:
-            top_paddle = self.paddles[current_participants["players"][1]]
-        else:
-            top_paddle = None
+        if len(current_participants["players"]) == 2:
+            if current_participants["players"][1] in self.paddles:
+                top_paddle = self.paddles[current_participants["players"][1]]
+            else:
+                top_paddle = None
 
         if current_participants["players"][0] in self.paddles:
             bottom_paddle = self.paddles[current_participants["players"][0]]
@@ -552,6 +553,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
         winners = cache.get(f"{self.room_name}_winners", [])
         losers = cache.get(f"{self.room_name}_losers", [])
+        round_type = "next_round"
 
         if len(current_participants["spectators"]) == 2:  # 4강 2경기
             # players 애들을 winners, losers 배열 만들고 이동
@@ -574,7 +576,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.room_group_name,
                 {
                     "type": "broadcast_next_tournament",
-                    "event_type": "next_round",  # next_round
+                    "event_type": round_type,  # next_round
                     "running_user_nickname": new_running_user,
                 },
             )
@@ -582,6 +584,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             len(winners) == 1 and len(current_participants["spectators"]) == 0
         ):  # 파이널
             GameConsumer.is_final[self.room_name] = True
+            round_type = "final_round"
             winners.append(winner)
             losers.append(loser)
             cache.set(f"{self.room_name}_winners", winners)
@@ -602,7 +605,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.room_group_name,
                 {
                     "type": "broadcast_next_tournament",
-                    "event_type": "next_round",  # next_round
+                    "event_type": round_type,  # final_round
                     "running_user_nickname": new_running_user,
                 },
             )
@@ -610,6 +613,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             len(winners) == 1 and len(current_participants["spectators"]) == 1
         ):  # 첫번째 게임 후 1번경우
             GameConsumer.is_final[self.room_name] = True
+            round_type = "final_round"
             winners.append(winner)
             losers.append(loser)
             cache.set(f"{self.room_name}_winners", winners)
@@ -623,7 +627,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.room_group_name,
                 {
                     "type": "broadcast_next_tournament",
-                    "event_type": "next_round",  # next_round
+                    "event_type": round_type,  # final_round
                     "running_user_nickname": new_running_user,
                 },
             )
