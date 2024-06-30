@@ -144,7 +144,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.nickname in users["players"]:  # players가 나간 경우
             opponent = next(p for p in users["players"] if p != self.nickname)
             self.scores[opponent] = 7
-            if GameConsumer.running[self.room_name] == True:
+            if GameConsumer.running[self.room_name]:
                 await self.end_game(opponent, self.nickname)
             GameConsumer.running[self.room_name] = False
         elif len(users["spectators"]) == 2:  # spectators가 1명 나간 경우
@@ -156,9 +156,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                     if spectator != self.nickname
                 )
             )
+            # update winner, loser in cache
             winners = cache.get(f"{self.room_name}_winners", [])
             losers = cache.get(f"{self.room_name}_losers", [])
-            # winner와 loser에 추가
             winners.append(winner)
             losers.append(self.nickname)
             cache.set(f"{self.room_name}_winners", winners)
@@ -551,44 +551,30 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_participants = cache.get(
             f"{self.room_name}_participants", {"players": [], "spectators": []}
         )
+
+        # update winner, loser in cache
         winners = cache.get(f"{self.room_name}_winners", [])
         losers = cache.get(f"{self.room_name}_losers", [])
+        winners.append(winner)
+        losers.append(loser)
+        cache.set(f"{self.room_name}_winners", winners)
+        cache.set(f"{self.room_name}_losers", losers)
+
+        # round_type for next_round or final_round
         round_type = "next_round"
 
         if len(current_participants["spectators"]) == 2:  # 4강 2경기
-            # players 애들을 winners, losers 배열 만들고 이동
-            # spectators 에 있는 애들을 players로 이동
-            winners.append(winner)
-            losers.append(loser)
-
-            cache.set(f"{self.room_name}_winners", winners)
-            cache.set(f"{self.room_name}_losers", losers)
-
             new_players = current_participants["spectators"]
             current_participants["players"] = new_players
             current_participants["spectators"] = []
 
             cache.set(f"{self.room_name}_participants", current_participants)
 
-            # running_user 권한 줘야함.
-            new_running_user = current_participants["players"][0]
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    "type": "broadcast_next_tournament",
-                    "event_type": round_type,  # next_round
-                    "running_user_nickname": new_running_user,
-                },
-            )
         elif (
-            len(winners) == 1 and len(current_participants["spectators"]) == 0
+            len(winners) == 2 and len(current_participants["spectators"]) == 0
         ):  # 파이널
             GameConsumer.is_final[self.room_name] = True
             round_type = "final_round"
-            winners.append(winner)
-            losers.append(loser)
-            cache.set(f"{self.room_name}_winners", winners)
-            cache.set(f"{self.room_name}_losers", losers)
 
             # winner가 관전 중 나간 경우에 대한 파이널 세팅
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
@@ -599,38 +585,25 @@ class GameConsumer(AsyncWebsocketConsumer):
                 current_participants["players"] = winners
             cache.set(f"{self.room_name}_participants", current_participants)
 
-            # running_user 권한 줘야함.
-            new_running_user = current_participants["players"][0]
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    "type": "broadcast_next_tournament",
-                    "event_type": round_type,  # final_round
-                    "running_user_nickname": new_running_user,
-                },
-            )
         elif (
-            len(winners) == 1 and len(current_participants["spectators"]) == 1
-        ):  # 첫번째 게임 후 1번경우
+            len(winners) == 2 and len(current_participants["spectators"]) == 1
+        ):  # 첫번째 게임 후 1번경우, 파이널
             GameConsumer.is_final[self.room_name] = True
             round_type = "final_round"
-            winners.append(winner)
-            losers.append(loser)
-            cache.set(f"{self.room_name}_winners", winners)
-            cache.set(f"{self.room_name}_losers", losers)
+
             current_participants["players"] = winners
             cache.set(f"{self.room_name}_participants", current_participants)
 
-            # running_user 권한 줘야함.
-            new_running_user = current_participants["players"][0]
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    "type": "broadcast_next_tournament",
-                    "event_type": round_type,  # final_round
-                    "running_user_nickname": new_running_user,
-                },
-            )
+        # running_user 권한 부여 후 group_send
+        new_running_user = current_participants["players"][0]
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_next_tournament",
+                "event_type": round_type,
+                "running_user_nickname": new_running_user,
+            },
+        )
 
     """
     ** send to group method
