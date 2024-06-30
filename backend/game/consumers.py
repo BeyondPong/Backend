@@ -220,8 +220,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             windows = cache.get(f"{self.room_name}_windows")
             game_width = min(windows["width"])
             game_height = min(windows["height"])
-            if not await self.game_settings(game_width, game_height):
-                return
+            await self.game_settings(game_width, game_height)
             if self.running_user:
                 asyncio.create_task(self.start_ball_movement())
 
@@ -305,58 +304,22 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.paddle_height = grid
         self.max_paddle_x = self.game_width - grid - self.paddle_width
 
-        # 참가자 목록 업데이트
         current_participants = cache.get(f"{self.room_name}_participants")
-
-        # 두번째 게임 중 첫번째 게임 winner가 나간 경우(일단 중복 로직이더라도 빼서 확인중)
         winners = cache.get(f"{self.room_name}_winners", [])
+
+        # player lefts room before start final_round
         if len(winners) == 2 and len(current_participants["players"]) < 2:
-            logger.debug(f"{self.nickname}: 결승전 전에 한명이 나간 경우!!!!!!!!!")
-            # from init_data()
-            self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
-            self.ball_velocity = {"x": 0, "y": 10}
-            self.paddles[winners[0]] = {
-                "nickname": winners[0],
-                "x": self.game_width / 2 - self.paddle_width / 2,
-                "y": self.game_height - grid * 3,
-                "width": self.paddle_width,
-                "height": grid,
-            }
-            self.paddles[winners[1]] = {
-                "nickname": winners[1],
-                "x": self.game_width / 2 - self.paddle_width / 2,
-                "y": grid * 2,
-                "width": self.paddle_width,
-                "height": grid,
-            }
-            # init score
-            self.scores = {nickname: 0 for nickname in current_participants["players"]}
-            GameConsumer.running[self.room_name] = False
-            await self.send_game_data("game_start")
-            # asyncio.create_task(self.start_ball_movement())
+            await self.handle_pre_game_player_exit(
+                current_participants["players"], winners
+            )
+            return
 
-            # send end_game
-            await asyncio.sleep(1)
-            winner = None
-            loser = None
-            # winners 리스트에서 current_participants["players"]에 있는 사람을 winner로 설정
-            for participant in winners:
-                if participant in current_participants["players"]:
-                    self.scores[participant] = 7
-                    winner = participant
-                else:
-                    self.scores[participant] = 0
-                    loser = participant
-            await self.end_game(winner, loser)
-            return False
-
-        # game_data 설정해서 보내주기
+        # init and send game_data
         await self.init_data()
         self.scores = {nickname: 0 for nickname in current_participants["players"]}
         if self.running_user:
             GameConsumer.running[self.room_name] = True
             await self.send_game_data("game_start")
-        return True
 
     async def update_ball_position(self):
         ball = self.ball_position
@@ -411,11 +374,12 @@ class GameConsumer(AsyncWebsocketConsumer):
         ball_velocity = self.ball_velocity
 
         current_participants = cache.get(f"{self.room_name}_participants")
-        if len(current_participants["players"]) == 2:
-            if current_participants["players"][1] in self.paddles:
-                top_paddle = self.paddles[current_participants["players"][1]]
-            else:
-                top_paddle = None
+        if len(current_participants["players"]) < 2:
+            return
+        if current_participants["players"][1] in self.paddles:
+            top_paddle = self.paddles[current_participants["players"][1]]
+        else:
+            top_paddle = None
 
         if current_participants["players"][0] in self.paddles:
             bottom_paddle = self.paddles[current_participants["players"][0]]
@@ -444,7 +408,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         GameConsumer.running[self.room_name] = False
         self.scores[winner] += 1
 
-        # 게임 종료 조건(end_game 여기서만 call)
+        # call end_game! and game stopped
         if self.scores[winner] >= 7:
             await self.end_game(winner, loser)
             return
@@ -460,7 +424,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # sleep and restart_game(send restart game_data)
         await asyncio.sleep(2)
-        await self.init_data(True)
+        await self.init_data(flag=True)
         await self.send_game_data("game_restart")
         GameConsumer.running[self.room_name] = True
 
@@ -515,13 +479,15 @@ class GameConsumer(AsyncWebsocketConsumer):
             )
         return serialized_nicknames
 
-    async def init_data(self, flag=False):
+    async def init_data(self, flag=False, winner_setting=False):
         current_participants = cache.get(
             f"{self.room_name}_participants", {"players": [], "spectators": []}
         )
         self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
         if flag is False:
             self.ball_velocity = {"x": 0, "y": 5}
+        if winner_setting is True:
+            current_participants["players"] = cache.get(f"{self.room_name}_winners")
         if len(current_participants["players"]) < 2:
             return
         self.paddles[current_participants["players"][0]] = {
@@ -567,7 +533,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             GameConsumer.is_final[self.room_name] = True
             round_type = "final_round"
 
-            # winner가 관전 중 나간 경우에 대한 파이널 세팅
+            # setting for left-spectator in winner(first round)
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             if len(current_participants["spectators"]) == 0 and not any(
                 nick == winners[0] for nick, _ in current_nicknames
@@ -588,6 +554,27 @@ class GameConsumer(AsyncWebsocketConsumer):
                 "running_user_nickname": new_running_user,
             },
         )
+
+    async def handle_pre_game_player_exit(self, players, winners):
+        self.running_user = False
+        await self.init_data(winner_setting=True)
+        self.scores = {nickname: 0 for nickname in winners}
+        GameConsumer.running[self.room_name] = False
+        await self.send_game_data("game_start")
+
+        # sleep 1sec and end_game
+        await asyncio.sleep(1)
+        winner = None
+        loser = None
+        # current participant will be winner
+        for participant in winners:
+            if participant in players:
+                self.scores[participant] = 7
+                winner = participant
+            else:
+                self.scores[participant] = 0
+                loser = participant
+        await self.end_game(winner, loser)
 
     """
     ** send to group method
