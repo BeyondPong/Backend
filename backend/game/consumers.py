@@ -147,6 +147,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             if GameConsumer.running[self.room_name]:
                 await self.end_game(opponent, self.nickname)
             GameConsumer.running[self.room_name] = False
+
         elif len(users["spectators"]) == 2:  # spectators가 1명 나간 경우
             # 남은 spectators가 winner (남은 spectators가 나가더라도 winner는 이미 여기서 정해짐)
             winner = next(
@@ -464,24 +465,12 @@ class GameConsumer(AsyncWebsocketConsumer):
         GameConsumer.running[self.room_name] = True
 
     async def end_game(self, winner, loser):
+        GameConsumer.running[self.room_name] = False
         self.running_user = False
+        await self.send_end_game_data(winner, loser)
 
-        end_game_data = {
-            "is_final": GameConsumer.is_final[self.room_name],
-            "winner": winner,
-            "loser": loser,
-            "scores": self.scores,
-        }
-
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "broadcast_event",
-                "event_type": "end_game",
-                "data": end_game_data,
-            },
-        )
-        if self.mode == "TOURNAMENT":
+        # prepare for only next_round
+        if self.mode == "TOURNAMENT" and not GameConsumer.is_final[self.room_name]:
             await self.prepare_next_tournament(winner, loser)
 
     """
@@ -527,10 +516,14 @@ class GameConsumer(AsyncWebsocketConsumer):
         return serialized_nicknames
 
     async def init_data(self, flag=False):
-        current_participants = cache.get(f"{self.room_name}_participants")
+        current_participants = cache.get(
+            f"{self.room_name}_participants", {"players": [], "spectators": []}
+        )
         self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
         if flag is False:
             self.ball_velocity = {"x": 0, "y": 5}
+        if len(current_participants["players"]) < 2:
+            return
         self.paddles[current_participants["players"][0]] = {
             "nickname": current_participants["players"][0],
             "x": self.game_width / 2 - self.paddle_width / 2,
@@ -570,28 +563,19 @@ class GameConsumer(AsyncWebsocketConsumer):
 
             cache.set(f"{self.room_name}_participants", current_participants)
 
-        elif (
-            len(winners) == 2 and len(current_participants["spectators"]) == 0
-        ):  # 파이널
+        elif len(winners) == 2:  # 파이널
             GameConsumer.is_final[self.room_name] = True
             round_type = "final_round"
 
             # winner가 관전 중 나간 경우에 대한 파이널 세팅
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
-            if not any(nick == winners[0] for nick, _ in current_nicknames):
+            if len(current_participants["spectators"]) == 0 and not any(
+                nick == winners[0] for nick, _ in current_nicknames
+            ):
                 current_participants["players"] = []
                 current_participants["players"].append(winner)
             else:
                 current_participants["players"] = winners
-            cache.set(f"{self.room_name}_participants", current_participants)
-
-        elif (
-            len(winners) == 2 and len(current_participants["spectators"]) == 1
-        ):  # 첫번째 게임 후 1번경우, 파이널
-            GameConsumer.is_final[self.room_name] = True
-            round_type = "final_round"
-
-            current_participants["players"] = winners
             cache.set(f"{self.room_name}_participants", current_participants)
 
         # running_user 권한 부여 후 group_send
@@ -634,7 +618,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             and len(players) < 2
         ):
             players = cache.get(f"{self.room_name}_winners", [])
-        logger.debug(f"players(tournament): {players}")
+        logger.debug(f"players(tournament): {players}, paddle-position: {self.paddles}")
         game_data = {
             "is_final": GameConsumer.is_final[self.room_name],
             "game_width": self.game_width,
@@ -685,6 +669,23 @@ class GameConsumer(AsyncWebsocketConsumer):
                 "type": "broadcast_event",
                 "event_type": "update_score",
                 "data": game_score,
+            },
+        )
+
+    async def send_end_game_data(self, winner, loser):
+        end_game_data = {
+            "is_final": GameConsumer.is_final[self.room_name],
+            "winner": winner,
+            "loser": loser,
+            "scores": self.scores,
+        }
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_event",
+                "event_type": "end_game",
+                "data": end_game_data,
             },
         )
 
