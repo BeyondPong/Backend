@@ -53,7 +53,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.running_user = False
         self.paddles = {}
         self.scores = {}
-        self.game_ended = False  # delete(?)
 
     """
     connect & disconnect method
@@ -128,8 +127,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             await sync_to_async(self.remove_nickname_from_cache)()
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             await self.send_nickname_validation(current_nicknames)
-            # if len(current_nicknames) == 0:
-            #     cache.delete(f"{self.room_name}_nicknames")
 
         if self.mode == "REMOTE":
             participants = cache.get(f"{self.room_name}_participants", None)
@@ -186,12 +183,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             p for p in current_participants["spectators"] if p != self.nickname
         ]
 
-        # 서버가 꺼지면 자동으로 삭제되도록 apps.py에서 관리
-        # if (len(current_participants["players"]) == 0) and (
-        #     len(current_participants["spectators"]) == 0
-        # ):
-        #     cache.delete(f"{self.room_name}_participants")
-        # else:
         cache.set(f"{self.room_name}_participants", current_participants)
 
         logger.debug(
@@ -316,12 +307,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         # 참가자 목록 업데이트
         current_participants = cache.get(f"{self.room_name}_participants")
 
-        # 게임 시작하기 직전에 방 나간 경우 -> 토너먼트에서 몰수패 처리 해야하는 부분
-        # if len(current_participants["players"]) < 2:
-        #     GameConsumer.running[self.room_name] = False
-        #     self.game_ended = True
-        #     return
-
         # 두번째 게임 중 첫번째 게임 winner가 나간 경우(일단 중복 로직이더라도 빼서 확인중)
         winners = cache.get(f"{self.room_name}_winners", [])
         if len(winners) == 2 and len(current_participants["players"]) < 2:
@@ -346,7 +331,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             # init score
             self.scores = {nickname: 0 for nickname in current_participants["players"]}
             GameConsumer.running[self.room_name] = False
-            self.game_ended = False
             await self.send_game_data("game_start")
             # asyncio.create_task(self.start_ball_movement())
 
@@ -368,7 +352,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         # game_data 설정해서 보내주기
         await self.init_data()
         self.scores = {nickname: 0 for nickname in current_participants["players"]}
-        self.game_ended = False
         if self.running_user:
             GameConsumer.running[self.room_name] = True
             await self.send_game_data("game_start")
@@ -481,7 +464,6 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def end_game(self, winner, loser):
         self.running_user = False
-        self.game_ended = True
 
         end_game_data = {
             "is_final": GameConsumer.is_final[self.room_name],
