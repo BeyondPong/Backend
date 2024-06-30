@@ -53,7 +53,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.running_user = False
         self.paddles = {}
         self.scores = {}
-        self.game_ended = False  # delete(?)
 
     """
     connect & disconnect method
@@ -128,8 +127,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             await sync_to_async(self.remove_nickname_from_cache)()
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             await self.send_nickname_validation(current_nicknames)
-            # if len(current_nicknames) == 0:
-            #     cache.delete(f"{self.room_name}_nicknames")
 
         if self.mode == "REMOTE":
             participants = cache.get(f"{self.room_name}_participants", None)
@@ -146,10 +143,10 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if self.nickname in users["players"]:  # players가 나간 경우
             opponent = next(p for p in users["players"] if p != self.nickname)
-            GameConsumer.running[self.room_name] = False
             self.scores[opponent] = 7
             if GameConsumer.running[self.room_name] == True:
                 await self.end_game(opponent, self.nickname)
+            GameConsumer.running[self.room_name] = False
         elif len(users["spectators"]) == 2:  # spectators가 1명 나간 경우
             # 남은 spectators가 winner (남은 spectators가 나가더라도 winner는 이미 여기서 정해짐)
             winner = next(
@@ -186,12 +183,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             p for p in current_participants["spectators"] if p != self.nickname
         ]
 
-        # 서버가 꺼지면 자동으로 삭제되도록 apps.py에서 관리
-        # if (len(current_participants["players"]) == 0) and (
-        #     len(current_participants["spectators"]) == 0
-        # ):
-        #     cache.delete(f"{self.room_name}_participants")
-        # else:
         cache.set(f"{self.room_name}_participants", current_participants)
 
         logger.debug(
@@ -316,12 +307,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         # 참가자 목록 업데이트
         current_participants = cache.get(f"{self.room_name}_participants")
 
-        # 게임 시작하기 직전에 방 나간 경우 -> 토너먼트에서 몰수패 처리 해야하는 부분
-        # if len(current_participants["players"]) < 2:
-        #     GameConsumer.running[self.room_name] = False
-        #     self.game_ended = True
-        #     return
-
         # 두번째 게임 중 첫번째 게임 winner가 나간 경우(일단 중복 로직이더라도 빼서 확인중)
         winners = cache.get(f"{self.room_name}_winners", [])
         if len(winners) == 2 and len(current_participants["players"]) < 2:
@@ -346,7 +331,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             # init score
             self.scores = {nickname: 0 for nickname in current_participants["players"]}
             GameConsumer.running[self.room_name] = False
-            self.game_ended = False
             await self.send_game_data("game_start")
             # asyncio.create_task(self.start_ball_movement())
 
@@ -368,7 +352,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         # game_data 설정해서 보내주기
         await self.init_data()
         self.scores = {nickname: 0 for nickname in current_participants["players"]}
-        self.game_ended = False
         if self.running_user:
             GameConsumer.running[self.room_name] = True
             await self.send_game_data("game_start")
@@ -390,7 +373,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         current_participants = cache.get(f"{self.room_name}_participants")
         if (
-            current_participants["players"][0] in self.paddles
+            len(current_participants["players"]) == 2
+            and current_participants["players"][0] in self.paddles
             and current_participants["players"][1] in self.paddles
         ):
             bottom_paddle_mid = self.paddles[current_participants["players"][0]][
@@ -426,10 +410,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         ball_velocity = self.ball_velocity
 
         current_participants = cache.get(f"{self.room_name}_participants")
-        if current_participants["players"][1] in self.paddles:
-            top_paddle = self.paddles[current_participants["players"][1]]
-        else:
-            top_paddle = None
+        if len(current_participants["players"]) == 2:
+            if current_participants["players"][1] in self.paddles:
+                top_paddle = self.paddles[current_participants["players"][1]]
+            else:
+                top_paddle = None
 
         if current_participants["players"][0] in self.paddles:
             bottom_paddle = self.paddles[current_participants["players"][0]]
@@ -480,7 +465,6 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def end_game(self, winner, loser):
         self.running_user = False
-        self.game_ended = True
 
         end_game_data = {
             "is_final": GameConsumer.is_final[self.room_name],
@@ -569,6 +553,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
         winners = cache.get(f"{self.room_name}_winners", [])
         losers = cache.get(f"{self.room_name}_losers", [])
+        round_type = "next_round"
 
         if len(current_participants["spectators"]) == 2:  # 4강 2경기
             # players 애들을 winners, losers 배열 만들고 이동
@@ -591,12 +576,15 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.room_group_name,
                 {
                     "type": "broadcast_next_tournament",
-                    "event_type": "next_round",  # next_round
+                    "event_type": round_type,  # next_round
                     "running_user_nickname": new_running_user,
                 },
             )
-        elif len(winners) == 1 and len(current_participants["players"]) == 2:  # 파이널
+        elif (
+            len(winners) == 1 and len(current_participants["spectators"]) == 0
+        ):  # 파이널
             GameConsumer.is_final[self.room_name] = True
+            round_type = "final_round"
             winners.append(winner)
             losers.append(loser)
             cache.set(f"{self.room_name}_winners", winners)
@@ -617,7 +605,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.room_group_name,
                 {
                     "type": "broadcast_next_tournament",
-                    "event_type": "next_round",  # next_round
+                    "event_type": round_type,  # final_round
                     "running_user_nickname": new_running_user,
                 },
             )
@@ -625,6 +613,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             len(winners) == 1 and len(current_participants["spectators"]) == 1
         ):  # 첫번째 게임 후 1번경우
             GameConsumer.is_final[self.room_name] = True
+            round_type = "final_round"
             winners.append(winner)
             losers.append(loser)
             cache.set(f"{self.room_name}_winners", winners)
@@ -638,23 +627,10 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.room_group_name,
                 {
                     "type": "broadcast_next_tournament",
-                    "event_type": "next_round",  # next_round
+                    "event_type": round_type,  # final_round
                     "running_user_nickname": new_running_user,
                 },
             )
-        # elif len(current_participants["spectators"]) == 0:  # 첫번째 게임 후 2번경우
-        # GameConsumer.is_final[self.room_name] = True
-        # final_winner = winners[0]  # 최종 우승자
-        # group_send 해야할 거 같음
-
-        # elif (
-        #     len(current_participants["spectators"]) == 1
-        # ):  # 첫 토너먼트 중 관전자 1명이 나간 경우 -> winner에 넣기
-        #     # 관전자 1명이면 바로 winners에 넣기
-        #     # winners배열의 len이 2면 결승 시작
-        #     winners.append(winner)
-        #     winners.append(current_participants["spectators"][0])
-        #     cache.set(f"{self.room_name}_winners", winners)
 
     """
     ** send to group method
@@ -679,7 +655,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_participants = cache.get(f"{self.room_name}_participants")
         # 결승전 직전에 플레이어 중 누가 나간 경우 바뀌어야 함
         players = current_participants["players"]
-        if self.mode == "TOURNAMENT" and GameConsumer.is_final[self.room_name] == True:
+        if (
+            self.mode == "TOURNAMENT"
+            and GameConsumer.is_final[self.room_name] == True
+            and len(players) < 2
+        ):
             players = cache.get(f"{self.room_name}_winners", [])
         logger.debug(f"players(tournament): {players}")
         game_data = {
