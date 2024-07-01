@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 grid = 15
 paddle_width = grid * 6
 ball_speed = 12
-paddle_speed = 6
+paddle_speed = 12
 
 
 class GameConsumer(AsyncWebsocketConsumer):
@@ -111,8 +111,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 {
                     "type": "broadcast_event",
                     "event_type": "start_game",
-                    # delete: running_user로 관리
-                    "data": {"first_user": current_participants["players"][0]},
+                    "data": {},
                 },
             )
 
@@ -166,15 +165,25 @@ class GameConsumer(AsyncWebsocketConsumer):
             cache.set(f"{self.room_name}_losers", losers)
 
     def remove_nickname_from_cache(self):
+        logger.debug(
+            f"==============remove_nickname_from_cache: {self.nickname}=============="
+        )
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+        logger.debug(f"before remove current_NICK: {current_nicknames}")
         nickname = self.scope["user"].nickname
         current_nicknames = [n for n in current_nicknames if n[1] != nickname]
         cache.set(f"{self.room_name}_nicknames", current_nicknames)
+        logger.debug(f"after remove current_NICK: {current_nicknames}")
 
     def remove_participant_from_cache(self):
+        logger.debug(
+            f"==============remove_participant_from_cache: {self.nickname}=============="
+        )
         current_participants = cache.get(f"{self.room_name}_participants", None)
         if not current_participants:
             return
+
+        logger.debug(f"before remove current_participants: {current_participants}")
 
         # players 또는 spectators에서 self.nickname 삭제
         current_participants["players"] = [
@@ -237,11 +246,18 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
 
     async def check_nickname(self, tournament_nickname, nickname):
-        current_participants = cache.get(f"{self.room_name}_participants")
-        logger.debug(f"Participants: {current_participants}")
+        current_participants = cache.get(
+            f"{self.room_name}_participants", {"players": [], "spectators": []}
+        )
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
 
+        logger.debug("==============CHECK NICKNAME==============")
+        logger.debug(f"accepted tournament-nickname: {tournament_nickname}")
+        logger.debug(f"before append -> current_nicknames: {current_nicknames}")
+        logger.debug(f"before change -> current_participants: {current_participants}")
+
         if any(nick == tournament_nickname for nick, _ in current_nicknames):
+            logger.debug(f"{tournament_nickname} is in nicknames!! request again!!")
             await self.send(text_data=json.dumps({"valid": False}))
             return
 
@@ -252,6 +268,27 @@ class GameConsumer(AsyncWebsocketConsumer):
             current_nicknames.append((tournament_nickname, nickname))
             cache.set(f"{self.room_name}_nicknames", current_nicknames)
             logger.debug(f"current_nicknames: {current_nicknames}")
+
+            # create nickname_mapping
+            nickname_mapping = {real: tourney for tourney, real in current_nicknames}
+            logger.debug(f"current_participants : {current_participants}")
+
+            # Update current_participants with the new tournament nickname
+            updated_players = [
+                nickname_mapping[nickname] if nickname in nickname_mapping else nickname
+                for nickname in current_participants["players"]
+            ]
+
+            updated_spectators = [
+                nickname_mapping[nickname] if nickname in nickname_mapping else nickname
+                for nickname in current_participants["spectators"]
+            ]
+
+            current_participants["players"] = updated_players
+            current_participants["spectators"] = updated_spectators
+
+            cache.set(f"{self.room_name}_participants", current_participants)
+            logger.debug(f"update current_participants : {current_participants}")
 
         if len(current_nicknames) == 4:
             logger.debug("4명이 다 들어왔습니다!")
@@ -264,25 +301,6 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.running_user = True
             logger.debug(f"serialized_nicknames: {serialized_nicknames}")
 
-            current_participants = cache.get(
-                f"{self.room_name}_participants", {"players": [], "spectators": []}
-            )
-
-            # Update players with tournament nicknames
-            updated_players = [
-                nickname_mapping.get(nickname, nickname)
-                for nickname in current_participants["players"]
-            ]
-            # Update spectators with tournament nicknames
-            updated_spectators = [
-                nickname_mapping.get(nickname, nickname)
-                for nickname in current_participants["spectators"]
-            ]
-
-            current_participants["players"] = updated_players
-            current_participants["spectators"] = updated_spectators
-
-            cache.set(f"{self.room_name}_participants", current_participants)
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -293,6 +311,13 @@ class GameConsumer(AsyncWebsocketConsumer):
                     },
                 },
             )
+
+        logger.debug("--------------after update--------------")
+        logger.debug(f"accepted tournament-nickname: {tournament_nickname}")
+        logger.debug(f"after append -> current_nicknames: {current_nicknames}")
+        logger.debug(f"after change -> current_participants: {current_participants}")
+        logger.debug("==========================================")
+
         self.nickname = tournament_nickname  # 토너먼트면 self.nickname까지 tournament_nickname으로 변경
 
         await self.send_nickname_validation(current_nicknames)
@@ -315,11 +340,16 @@ class GameConsumer(AsyncWebsocketConsumer):
         rooms[self.room_name] = rooms_details
         cache.set("rooms", rooms)
 
-        # player lefts room before start final_round
+        # player lefts room before start game
         if len(winners) == 2 and len(current_participants["players"]) < 2:
+            # only in tournament-final-round
             await self.handle_pre_game_player_exit(
                 current_participants["players"], winners
             )
+            return
+        elif len(current_participants["players"]) < 2:
+            # another round
+            await self.send_game_data("game_start")
             return
 
         # init and send game_data
@@ -345,7 +375,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         current_participants = cache.get(f"{self.room_name}_participants")
         if (
-            len(current_participants["players"]) == 2
+            current_participants
+            and len(current_participants["players"]) == 2
             and current_participants["players"][0] in self.paddles
             and current_participants["players"][1] in self.paddles
         ):
@@ -365,7 +396,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                     current_participants["players"][1],
                     current_participants["players"][0],
                 )
-        await self.check_paddle_collision()
+            # current_participants에 없는 경우에 대해 paddle_position 보내지 못하도록 if문 안에 넣음
+            await self.check_paddle_collision()
 
     async def move_paddle(self, paddle_owner, direction):
         if direction == "left":
@@ -426,9 +458,9 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         current_participants = cache.get(f"{self.room_name}_participants")
         if winner == self.paddles[current_participants["players"][0]]["nickname"]:
-            self.ball_velocity = {"x": 0, "y": 5}
+            self.ball_velocity = {"x": 0, "y": 10}
         else:
-            self.ball_velocity = {"x": 0, "y": -5}
+            self.ball_velocity = {"x": 0, "y": -10}
 
         # sleep and restart_game(send restart game_data)
         await asyncio.sleep(2)
@@ -493,7 +525,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
         self.ball_position = {"x": self.game_width / 2, "y": self.game_height / 2}
         if flag is False:
-            self.ball_velocity = {"x": 0, "y": 5}
+            self.ball_velocity = {"x": 0, "y": 10}
         if winner_setting is True:
             current_participants["players"] = cache.get(f"{self.room_name}_winners")
         if len(current_participants["players"]) < 2:
@@ -612,8 +644,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             and GameConsumer.is_final[self.room_name] == True
             and len(players) < 2
         ):
+            # player left room before only for tournament-fianl-game (another games will be checked in FE)
             players = cache.get(f"{self.room_name}_winners", [])
-        logger.debug(f"players(tournament): {players}, paddle-position: {self.paddles}")
+        # if len(players) < 2: game_data에 players만 넣기
         game_data = {
             "is_final": GameConsumer.is_final[self.room_name],
             "game_width": self.game_width,
