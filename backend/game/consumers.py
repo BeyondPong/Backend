@@ -119,11 +119,18 @@ class GameConsumer(AsyncWebsocketConsumer):
         users = cache.get(f"{self.room_name}_participants", None)
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         await sync_to_async(manage_participants)(self.room_name, decrease=True)
-        await sync_to_async(self.remove_participant_from_cache)()
+
+        rooms = cache.get("rooms", {})
+        rooms_details = rooms.get(self.room_name, {})
+        if rooms_details["in_game"] == False:
+            await self.remove_participant_before_start()
+        else:
+            await self.remove_participant_from_cache()
+
         await self.check_end_game(users)
 
         if self.mode == "TOURNAMENT":
-            await sync_to_async(self.remove_nickname_from_cache)()
+            await self.remove_nickname_from_cache()
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             await self.send_nickname_validation(current_nicknames)
 
@@ -164,7 +171,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             cache.set(f"{self.room_name}_winners", winners)
             cache.set(f"{self.room_name}_losers", losers)
 
-    def remove_nickname_from_cache(self):
+    async def remove_nickname_from_cache(self):
         logger.debug(
             f"==============remove_nickname_from_cache: {self.nickname}=============="
         )
@@ -175,7 +182,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         cache.set(f"{self.room_name}_nicknames", current_nicknames)
         logger.debug(f"after remove current_NICK: {current_nicknames}")
 
-    def remove_participant_from_cache(self):
+    async def remove_participant_from_cache(self):
         logger.debug(
             f"==============remove_participant_from_cache: {self.nickname}=============="
         )
@@ -192,6 +199,35 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_participants["spectators"] = [
             p for p in current_participants["spectators"] if p != self.nickname
         ]
+
+        cache.set(f"{self.room_name}_participants", current_participants)
+
+        logger.debug(
+            f"Updated participants in {self.room_name}: {current_participants}"
+        )
+
+    async def remove_participant_before_start(self):
+        logger.debug(
+            f"==============remove_participant_from_cache: {self.nickname}=============="
+        )
+        current_participants = cache.get(f"{self.room_name}_participants", None)
+        if not current_participants:
+            return
+
+        logger.debug(f"before remove current_participants: {current_participants}")
+
+        # 플레이어 목록에서 self.nickname을 삭제 후 spectators에 있다면 옮기기
+        if self.nickname in current_participants["players"]:
+            current_participants["players"].remove(self.nickname)
+            # 플레이어가 나간 후 관전자 중 첫 번째를 플레이어로 승격시키기
+            if current_participants["spectators"]:
+                first_spectator = current_participants["spectators"].pop(0)
+                current_participants["players"].append(first_spectator)
+                logger.debug(f"{first_spectator} moved from spectators to players.")
+
+        # 관전자 목록에서 self.nickname 삭제
+        elif self.nickname in current_participants["spectators"]:
+            current_participants["spectators"].remove(self.nickname)
 
         cache.set(f"{self.room_name}_participants", current_participants)
 
