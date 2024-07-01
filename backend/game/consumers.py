@@ -249,7 +249,6 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def check_nickname(self, tournament_nickname, nickname):
         current_participants = cache.get(f"{self.room_name}_participants")
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
-        # delete!!!!!!!!!!!!!!!!!!
         logger.debug("==============CHECK NICKNAME==============")
         logger.debug(f"accepted tournament-nickname: {tournament_nickname}")
         logger.debug(f"before append -> current_nicknames: {current_nicknames}")
@@ -268,6 +267,21 @@ class GameConsumer(AsyncWebsocketConsumer):
             cache.set(f"{self.room_name}_nicknames", current_nicknames)
             logger.debug(f"current_nicknames: {current_nicknames}")
 
+            # Update current_participants with the new tournament nickname
+            if nickname in current_participants["players"]:
+                current_participants["players"] = [
+                    tournament_nickname if nick == nickname else nick
+                    for nick in current_participants["players"]
+                ]
+            elif nickname in current_participants["spectators"]:
+                current_participants["spectators"] = [
+                    tournament_nickname if nick == nickname else nick
+                    for nick in current_participants["spectators"]
+                ]
+
+            cache.set(f"{self.room_name}_participants", current_participants)
+            logger.debug(f"Updated current_participants: {current_participants}")
+
         if len(current_nicknames) == 4:
             logger.debug("4명이 다 들어왔습니다!")
             GameConsumer.is_final[self.room_name] = False
@@ -279,25 +293,6 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.running_user = True
             logger.debug(f"serialized_nicknames: {serialized_nicknames}")
 
-            current_participants = cache.get(
-                f"{self.room_name}_participants", {"players": [], "spectators": []}
-            )
-
-            # Update players with tournament nicknames
-            updated_players = [
-                nickname_mapping.get(nickname, nickname)
-                for nickname in current_participants["players"]
-            ]
-            # Update spectators with tournament nicknames
-            updated_spectators = [
-                nickname_mapping.get(nickname, nickname)
-                for nickname in current_participants["spectators"]
-            ]
-
-            current_participants["players"] = updated_players
-            current_participants["spectators"] = updated_spectators
-
-            cache.set(f"{self.room_name}_participants", current_participants)
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -314,6 +309,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         logger.debug(f"after append -> current_nicknames: {current_nicknames}")
         logger.debug(f"after change -> current_participants: {current_participants}")
         logger.debug("==========================================")
+
         self.nickname = tournament_nickname  # 토너먼트면 self.nickname까지 tournament_nickname으로 변경
 
         await self.send_nickname_validation(current_nicknames)
