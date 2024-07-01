@@ -496,6 +496,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             "y": self.game_height - grid * 3,
             "width": self.paddle_width,
             "height": grid,
+            "color": "red",
         }
         self.paddles[current_participants["players"][1]] = {
             "nickname": current_participants["players"][1],
@@ -503,6 +504,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             "y": grid * 2,
             "width": self.paddle_width,
             "height": grid,
+            "color": "black",
         }
 
     async def prepare_next_tournament(self, winner, loser):
