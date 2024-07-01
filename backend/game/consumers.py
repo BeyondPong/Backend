@@ -122,7 +122,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         rooms = cache.get("rooms", {})
         rooms_details = rooms.get(self.room_name, {})
-        if rooms_details["in_game"] == False:
+        in_game = rooms.get(self.room_name, False)
+        if not in_game:
             await self.remove_participant_before_start()
         else:
             await self.remove_participant_from_cache()
@@ -499,7 +500,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             self.ball_velocity = {"x": 0, "y": -10}
 
         # sleep and restart_game(send restart game_data)
-        await asyncio.sleep(2)
+        for _ in range(4):  # Divide 2 seconds into 4 half-second intervals
+            if not GameConsumer.running[
+                self.room_name
+            ]:  # Check if game is still running
+                return  # Stop if game has ended or paused
+            await asyncio.sleep(0.5)  # Wait for half a second
+        # await asyncio.sleep(2)
         await self.init_data(flag=True)
         await self.send_game_data("game_restart")
         GameConsumer.running[self.room_name] = True
