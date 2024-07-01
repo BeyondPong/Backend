@@ -307,6 +307,14 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_participants = cache.get(f"{self.room_name}_participants")
         winners = cache.get(f"{self.room_name}_winners", [])
 
+        # 현재 방의 상태를 in_game = True로 변경
+        rooms = cache.get("rooms", {})
+        logger.debug(f"Rooms: {rooms}")
+        rooms_details = rooms.get(self.room_name, {})
+        rooms_details["in_game"] = True
+        rooms[self.room_name] = rooms_details
+        cache.set("rooms", rooms)
+
         # player lefts room before start final_round
         if len(winners) == 2 and len(current_participants["players"]) < 2:
             await self.handle_pre_game_player_exit(
@@ -431,6 +439,13 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def end_game(self, winner, loser):
         GameConsumer.running[self.room_name] = False
         self.running_user = False
+
+        # rooms = cache.get("rooms", {})
+        # room_details = rooms.get(self.room_name, {})
+        # room_details["in_game"] = False
+        # rooms[self.room_name] = room_details
+        # cache.set("rooms", rooms)
+
         await self.send_end_game_data(winner, loser)
 
         # prepare for only next_round
@@ -496,7 +511,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             "y": self.game_height - grid * 3,
             "width": self.paddle_width,
             "height": grid,
-            "color": "red",
         }
         self.paddles[current_participants["players"][1]] = {
             "nickname": current_participants["players"][1],
@@ -504,7 +518,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             "y": grid * 2,
             "width": self.paddle_width,
             "height": grid,
-            "color": "black",
         }
 
     async def prepare_next_tournament(self, winner, loser):
