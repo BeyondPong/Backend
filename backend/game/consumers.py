@@ -439,13 +439,6 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def end_game(self, winner, loser):
         GameConsumer.running[self.room_name] = False
         self.running_user = False
-
-        # rooms = cache.get("rooms", {})
-        # room_details = rooms.get(self.room_name, {})
-        # room_details["in_game"] = False
-        # rooms[self.room_name] = room_details
-        # cache.set("rooms", rooms)
-
         await self.send_end_game_data(winner, loser)
 
         # prepare for only next_round
