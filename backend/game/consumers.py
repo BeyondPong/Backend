@@ -165,15 +165,26 @@ class GameConsumer(AsyncWebsocketConsumer):
             cache.set(f"{self.room_name}_losers", losers)
 
     def remove_nickname_from_cache(self):
+        logger.debug(
+            f"==============remove_nickname_from_cache: {self.nickname}=============="
+        )
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+        logger.debug(f"before remove current_NICK: {current_nicknames}")
         nickname = self.scope["user"].nickname
         current_nicknames = [n for n in current_nicknames if n[1] != nickname]
         cache.set(f"{self.room_name}_nicknames", current_nicknames)
+        logger.debug(f"after remove current_NICK: {current_nicknames}")
 
     def remove_participant_from_cache(self):
+        logger.debug(
+            f"==============remove_participant_from_cache: {self.nickname}=============="
+        )
         current_participants = cache.get(f"{self.room_name}_participants", None)
         if not current_participants:
             return
+
+        logger.debug(f"before remove current_participants: {current_participants}")
+        # nickname = self.scope["user"].nickname
 
         # players 또는 spectators에서 self.nickname 삭제
         current_participants["players"] = [
@@ -238,12 +249,14 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def check_nickname(self, tournament_nickname, nickname):
         current_participants = cache.get(f"{self.room_name}_participants")
         current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+        # delete!!!!!!!!!!!!!!!!!!
         logger.debug("==============CHECK NICKNAME==============")
         logger.debug(f"accepted tournament-nickname: {tournament_nickname}")
-        logger.debug(f"current_NICKnames: {current_nicknames}")
-        logger.debug(f"current_participants: {current_participants}")
+        logger.debug(f"before append -> current_nicknames: {current_nicknames}")
+        logger.debug(f"before change -> current_participants: {current_participants}")
 
         if any(nick == tournament_nickname for nick, _ in current_nicknames):
+            logger.debug(f"{tournament_nickname} is in nicknames!! request again!!")
             await self.send(text_data=json.dumps({"valid": False}))
             return
 
@@ -295,6 +308,12 @@ class GameConsumer(AsyncWebsocketConsumer):
                     },
                 },
             )
+
+        logger.debug("--------------after update--------------")
+        logger.debug(f"accepted tournament-nickname: {tournament_nickname}")
+        logger.debug(f"after append -> current_nicknames: {current_nicknames}")
+        logger.debug(f"after change -> current_participants: {current_participants}")
+        logger.debug("==========================================")
         self.nickname = tournament_nickname  # 토너먼트면 self.nickname까지 tournament_nickname으로 변경
 
         await self.send_nickname_validation(current_nicknames)
