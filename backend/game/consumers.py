@@ -97,15 +97,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
         if self.mode == "REMOTE" and len(current_participants["players"]) == 2:
-            self.running_user = True
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    "type": "broadcast_event",
-                    "event_type": "start_game",
-                    "data": {},
-                },
-            )
+            await self.send_start_game(self.nickname)
 
     async def disconnect(self, close_code):
         users = cache.get(f"{self.room_name}_participants", None)
@@ -113,7 +105,6 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # check if room game started
         rooms = cache.get("rooms", {})
-        logger.debug(f"rooms: {rooms}")
         rooms_details = rooms.get(self.room_name, {})
         if rooms_details.get("in_game"):
             await self.remove_participant_from_cache()
@@ -165,8 +156,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             losers.append(self.nickname)
             cache.set(f"{self.room_name}_winners", winners)
             cache.set(f"{self.room_name}_losers", losers)
-            logger.debug(f"Here!! in spectators")
-            logger.debug(f"winners: {winners}, losers: {losers}")
 
     async def remove_nickname_from_cache(self):
         logger.debug(
@@ -299,9 +288,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         # append in current_participants
         player_count = len(current_participants["players"])
         if player_count < 2:
-            if player_count == 0:
-                # 나가는 경우에 대비해서 위치 조정해야 할듯!!!!
-                self.running_user = True
             current_participants["players"].append(self.nickname)
         else:
             current_participants["spectators"].append(self.nickname)
@@ -316,20 +302,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         if len(current_nicknames) == 4:
             logger.debug("4명이 다 들어왔습니다!")
             GameConsumer.is_final[self.room_name] = False
-            serialized_nicknames = await self.serialize_nicknames(current_nicknames)
-
-            logger.debug(f"serialized_nicknames: {serialized_nicknames}")
-
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    "type": "broadcast_event",
-                    "event_type": "start_game",
-                    "data": {
-                        "nicknames": serialized_nicknames,
-                    },
-                },
-            )
+            await self.send_start_game(current_participants["players"][0])
 
         logger.debug("--------------after update--------------")
         current_participants = cache.get(
@@ -625,8 +598,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                "type": "broadcast_next_tournament",
+                "type": "broadcast_for_start",
                 "event_type": round_type,
+                "data": {},
                 "running_user_nickname": new_running_user,
             },
         )
@@ -656,7 +630,24 @@ class GameConsumer(AsyncWebsocketConsumer):
     ** send to group method
     """
 
-    # async def send_start_game(self, ):
+    async def send_start_game(self, new_running_user):
+        serialized_nicknames = []
+        if self.mode == "TOURNAMENT":
+            current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+            serialized_nicknames = await self.serialize_nicknames(current_nicknames)
+            logger.debug(f"serialized_nicknames: {serialized_nicknames}")
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_for_start",
+                "event_type": "start_game",
+                "data": {
+                    "nicknames": serialized_nicknames,
+                },
+                "running_user_nickname": new_running_user,
+            },
+        )
 
     async def send_nickname_validation(self, current_nicknames):
         serialized_nicknames = await self.serialize_nicknames(current_nicknames)
@@ -793,13 +784,15 @@ class GameConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"type": event["event_type"], "data": event["data"]})
         )
 
-    async def broadcast_next_tournament(self, event):
+    async def broadcast_for_start(self, event):
         running_user_nickname = event["running_user_nickname"]
         if self.nickname == running_user_nickname:
             self.running_user = True
         else:
             self.running_user = False
-        await self.send(text_data=json.dumps({"type": event["event_type"]}))
+        await self.send(
+            text_data=json.dumps({"type": event["event_type"], "data": event["data"]})
+        )
 
     """
     ** coroutine method
