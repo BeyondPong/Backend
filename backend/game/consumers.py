@@ -500,13 +500,20 @@ class GameConsumer(AsyncWebsocketConsumer):
             self.ball_velocity = {"x": 0, "y": -10}
 
         # sleep and restart_game(send restart game_data)
-        for _ in range(4):  # Divide 2 seconds into 4 half-second intervals
-            if not GameConsumer.running[
-                self.room_name
-            ]:  # Check if game is still running
-                return  # Stop if game has ended or paused
-            await asyncio.sleep(0.5)  # Wait for half a second
-        # await asyncio.sleep(2)
+        for _ in range(4):
+            await asyncio.sleep(0.5)
+            updated_participants = cache.get(f"{self.room_name}_participants")
+            if len(updated_participants["players"]) == 1:
+                winner = updated_participants["players"][0]
+                loser = None
+                for player in current_participants["players"]:
+                    if player not in updated_participants["players"]:
+                        loser = player
+                        break
+                self.scores[winner] = 7
+                await self.end_game(winner, loser)
+                return
+
         await self.init_data(flag=True)
         await self.send_game_data("game_restart")
         GameConsumer.running[self.room_name] = True
@@ -819,7 +826,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
 
     async def start_ball_movement(self):
-        while GameConsumer.running[self.room_name]:
+        while GameConsumer.running.get(self.room_name, False):
             await self.update_ball_position()
             await self.send_ball_position()
             await asyncio.sleep(0.01667)  # 60 FPS
