@@ -675,7 +675,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                "type": "broadcast_event",
+                "type": "broadcast_nickname_validation",
                 "event_type": "nickname_valid",
                 "data": {
                     "valid": True,
@@ -772,24 +772,29 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
 
     async def broadcast_event(self, event):
-        event_type = event["event_type"]
         await self.send(
-            text_data=json.dumps({"type": event_type, "data": event["data"]})
+            text_data=json.dumps({"type": event["event_type"], "data": event["data"]})
+        )
+
+    async def broadcast_nickname_validation(self, event):
+        current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+        if not any(nick == self.nickname for nick, _ in current_nicknames):
+            return
+        await self.send(
+            text_data=json.dumps({"type": event["event_type"], "data": event["data"]})
         )
 
     async def broadcast_paddle_position(self, event):
         paddles = event["data"]
-        event_type = event["event_type"]
         # update
         for paddle in paddles:
             self.paddles[paddle["nickname"]] = paddle
         # send
         await self.send(
-            text_data=json.dumps({"type": event_type, "data": event["data"]})
+            text_data=json.dumps({"type": event["event_type"], "data": event["data"]})
         )
 
     async def broadcast_game_data(self, event):
-        event_type = event["event_type"]
         data = event["data"]
         # update
         self.ball_position = data["ball_position"]
@@ -798,28 +803,16 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.scores = data["scores"]
         # send
         await self.send(
-            text_data=json.dumps({"type": event_type, "data": event["data"]})
+            text_data=json.dumps({"type": event["event_type"], "data": event["data"]})
         )
 
-    # async def broadcast_score(self, event):
-    #     event_type = event["event_type"]
-    #     data = event["data"]
-    #     # update
-    #     self.scores = data["scores"]
-    #     self.ball_position = data["ball_position"]
-    #     # send
-    #     await self.send(
-    #         text_data=json.dumps({"type": event_type, "data": event["data"]})
-    #     )
-
     async def broadcast_next_tournament(self, event):
-        event_type = event["event_type"]
         running_user_nickname = event["running_user_nickname"]
         if self.nickname == running_user_nickname:
             self.running_user = True
         else:
             self.running_user = False
-        await self.send(text_data=json.dumps({"type": event_type}))
+        await self.send(text_data=json.dumps({"type": event["event_type"]}))
 
     """
     ** coroutine method
