@@ -76,16 +76,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             f"{self.room_name}_participants", {"players": [], "spectators": []}
         )
 
-        # game_mode에 따라 참가자 추가
-        if self.mode == "TOURNAMENT":
-            player_count = len(current_participants["players"])
-            if player_count < 2:
-                if player_count == 0:
-                    self.running_user = True
-                current_participants["players"].append(self.nickname)
-            else:
-                current_participants["spectators"].append(self.nickname)
-        else:  # REMOTE
+        # remote: append in current_participants (tournament: append in check_nickname)
+        if self.mode == "REMOTE":
             current_participants["players"].append(self.nickname)
 
         # debugging
@@ -132,6 +124,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if self.mode == "TOURNAMENT":
             await self.remove_nickname_from_cache()
+            # if not in_game:
             current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
             await self.send_nickname_validation(current_nicknames)
 
@@ -154,6 +147,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             if GameConsumer.running[self.room_name]:
                 await self.end_game(opponent, self.nickname)
             GameConsumer.running[self.room_name] = False
+            logger.debug(f"Here!! in players")
 
         elif len(users["spectators"]) == 2:  # spectators가 1명 나간 경우
             # 남은 spectators가 winner (남은 spectators가 나가더라도 winner는 이미 여기서 정해짐)
@@ -171,6 +165,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             losers.append(self.nickname)
             cache.set(f"{self.room_name}_winners", winners)
             cache.set(f"{self.room_name}_losers", losers)
+            logger.debug(f"Here!! in spectators")
+            logger.debug(f"winners: {winners}, losers: {losers}")
 
     async def remove_nickname_from_cache(self):
         logger.debug(
@@ -247,8 +243,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         if action == "check_nickname":
             if self.mode == "TOURNAMENT":
                 tournament_nickname = data["nickname"]
-                nickname = self.nickname
-                await self.check_nickname(tournament_nickname, nickname)
+                await self.check_nickname(tournament_nickname, self.nickname)
 
         elif action == "set_board":
             # 창 크기 정보 캐시에서 가져오거나 초기화
@@ -298,44 +293,31 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({"valid": False}))
             return
 
-        if (
-            nickname in current_participants["players"]
-            or nickname in current_participants["spectators"]
-        ):
-            current_nicknames.append((tournament_nickname, nickname))
-            cache.set(f"{self.room_name}_nicknames", current_nicknames)
-            logger.debug(f"current_nicknames: {current_nicknames}")
+        # in tournament, self.nickname = tournament_nickname
+        self.nickname = tournament_nickname
 
-            # create nickname_mapping
-            nickname_mapping = {real: tourney for tourney, real in current_nicknames}
-            logger.debug(f"current_participants : {current_participants}")
+        # append in current_participants
+        player_count = len(current_participants["players"])
+        if player_count < 2:
+            if player_count == 0:
+                # 나가는 경우에 대비해서 위치 조정해야 할듯!!!!
+                self.running_user = True
+            current_participants["players"].append(self.nickname)
+        else:
+            current_participants["spectators"].append(self.nickname)
+        cache.set(f"{self.room_name}_participants", current_participants)
+        logger.debug(f"update current_participants : {current_participants}")
 
-            # Update current_participants with the new tournament nickname
-            updated_players = [
-                nickname_mapping[nickname] if nickname in nickname_mapping else nickname
-                for nickname in current_participants["players"]
-            ]
-
-            updated_spectators = [
-                nickname_mapping[nickname] if nickname in nickname_mapping else nickname
-                for nickname in current_participants["spectators"]
-            ]
-
-            current_participants["players"] = updated_players
-            current_participants["spectators"] = updated_spectators
-
-            cache.set(f"{self.room_name}_participants", current_participants)
-            logger.debug(f"update current_participants : {current_participants}")
+        # append in current_nicknames(nickname = intra-nickname)
+        current_nicknames.append((tournament_nickname, nickname))
+        cache.set(f"{self.room_name}_nicknames", current_nicknames)
+        logger.debug(f"current_nicknames: {current_nicknames}")
 
         if len(current_nicknames) == 4:
             logger.debug("4명이 다 들어왔습니다!")
             GameConsumer.is_final[self.room_name] = False
             serialized_nicknames = await self.serialize_nicknames(current_nicknames)
-            current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
-            nickname_mapping = {real: tourney for tourney, real in current_nicknames}
 
-            if self.nickname == current_nicknames[0][1]:
-                self.running_user = True
             logger.debug(f"serialized_nicknames: {serialized_nicknames}")
 
             await self.channel_layer.group_send(
@@ -350,6 +332,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             )
 
         logger.debug("--------------after update--------------")
+        current_participants = cache.get(
+            f"{self.room_name}_participants", {"players": [], "spectators": []}
+        )
+        current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
         logger.debug(f"accepted tournament-nickname: {tournament_nickname}")
         logger.debug(f"after append -> current_nicknames: {current_nicknames}")
         logger.debug(f"after change -> current_participants: {current_participants}")
@@ -669,6 +655,8 @@ class GameConsumer(AsyncWebsocketConsumer):
     """
     ** send to group method
     """
+
+    # async def send_start_game(self, ):
 
     async def send_nickname_validation(self, current_nicknames):
         serialized_nicknames = await self.serialize_nicknames(current_nicknames)
