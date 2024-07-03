@@ -135,6 +135,7 @@ class OAuth42SocialLoginView(APIView):
 
     def _create_jwt_token(self, user):
         payload = {
+            "user_id": user.id,
             "nickname": user.nickname,
             "email": user.email,
             "2fa": "false",
@@ -258,6 +259,7 @@ class TwoFactorVerifyCodeView(APIView):
 
     def _create_new_jwt_token(self, user):
         payload = {
+            "user_id": user.id,
             "nickname": user.nickname,
             "email": user.email,
             "2fa": "true",
@@ -274,7 +276,7 @@ class TwoFactorVerifyCodeView(APIView):
 
 
 class MultipleLoginView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         logger.debug("========== MULTIPLE LOGIN REQUEST ==========")
