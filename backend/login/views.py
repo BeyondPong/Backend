@@ -11,6 +11,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django_redis import get_redis_connection
 
 from user.models import Member
 
@@ -270,3 +271,14 @@ class TwoFactorVerifyCodeView(APIView):
         except Exception as e:
             logger.error(f"!!!!!!!! ERROR creating jwt token: {e} !!!!!!!!")
             return None
+
+
+class MultipleLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        logger.debug("========== MULTIPLE LOGIN REQUEST ==========")
+        user = request.user
+        redis_conn = get_redis_connection("default")
+        is_multiple = bool(redis_conn.sismember(f"login_room_users", user.nickname))
+        return Response({"is_multiple": is_multiple}, status=status.HTTP_200_OK)
