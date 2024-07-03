@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 def decode_jwt(jwt_token):
     try:
-        payload = jwt.decode(jwt_token, settings.OAUTH_CLIENT_SECRET, algorithms=["HS256"])
+        payload = jwt.decode(
+            jwt_token, settings.OAUTH_CLIENT_SECRET, algorithms=["HS256"]
+        )
         return payload
     except jwt.ExpiredSignatureError:
         logger.error("========== ERROR: expired signature ==========")
@@ -25,8 +27,14 @@ def decode_jwt(jwt_token):
 class JWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
         # except backend-local-home, admin, login
-        if request.path.startswith("/admin") or request.path == "/" or request.path == "/login/oauth/":
-            logger.debug(f"========== Skipping JWT authentication for path: {request.path} ==========")
+        if (
+            request.path.startswith("/admin")
+            or request.path == "/"
+            or request.path == "/login/oauth/"
+        ):
+            logger.debug(
+                f"========== Skipping JWT authentication for path: {request.path} =========="
+            )
             return None
 
         logger.debug("========== PROCESS REQUEST ==========")
@@ -43,7 +51,11 @@ class JWTAuthentication(BaseAuthentication):
                 user = Member.objects.get(nickname=payload["nickname"])
                 logger.debug(f"========= Authenticated user: {user.nickname}=========")
                 # check 2fa except 2fa-view
-                if request.path.startswith("/login/two_fa/") or request.path == "/login/registration/":
+                if (
+                    request.path == "/login/multiple/"
+                    or request.path == "/login/registration/"
+                    or request.path.startswith("/login/two_fa/")
+                ):
                     return user, jwt_token
                 auth_2fa = payload["2fa"]
                 if auth_2fa == "false":
