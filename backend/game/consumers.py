@@ -252,7 +252,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             windows = cache.get(f"{self.room_name}_windows")
             game_width = min(windows["width"])
             game_height = min(windows["height"])
-            await self.game_settings(game_width, game_height)
+            self_send = False
+            if action == "resend":
+                self_send = True
+            await self.game_settings(game_width, game_height, self_send)
             if self.running_user:
                 asyncio.create_task(self.start_ball_movement())
 
@@ -320,7 +323,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         logger.debug(f"after change -> current_participants: {current_participants}")
         logger.debug("==========================================")
 
-    async def game_settings(self, game_width, game_height):
+    async def game_settings(self, game_width, game_height, self_send):
         self.game_width = game_width
         self.game_height = game_height
         self.paddle_width = paddle_width
@@ -368,6 +371,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.running_user:
             GameConsumer.running[self.room_name] = True
             await self.send_game_data("game_start")
+        elif self_send:
+            await self.send_game_data("game_start", True)
 
     async def update_ball_position(self):
         ball = self.ball_position
@@ -685,7 +690,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             },
         )
 
-    async def send_game_data(self, event_type):
+    async def send_game_data(self, event_type, self_send=False):
         logger.debug(f"**is_final: {GameConsumer.is_final[self.room_name]}")
         # player left room before only for tournament-fianl-game (another games will be checked in FE)
         current_participants = cache.get(f"{self.room_name}_participants")
@@ -706,14 +711,19 @@ class GameConsumer(AsyncWebsocketConsumer):
             "players": players,
             "scores": self.scores,
         }
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "broadcast_game_data",
-                "event_type": event_type,
-                "data": game_data,
-            },
-        )
+        if self_send:
+            await self.send(
+                text_data=json.dumps({"type": event_type, "data": game_data})
+            )
+        else:
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "broadcast_game_data",
+                    "event_type": event_type,
+                    "data": game_data,
+                },
+            )
 
     async def send_ball_position(self):
         await self.channel_layer.group_send(
