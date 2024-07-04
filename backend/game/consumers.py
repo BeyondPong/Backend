@@ -97,6 +97,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
         if self.mode == "REMOTE" and len(current_participants["players"]) == 2:
+            # 현재 방의 상태를 in_game = True로 변경
+            await self.set_room_in_game()
             await self.send_start_game(self.nickname)
 
     async def disconnect(self, close_code):
@@ -246,7 +248,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             windows["height"].append(game_height)
             cache.set(f"{self.room_name}_windows", windows)
 
-        elif action == "start_game":
+        elif action == "start_game" or action == "resend":
             windows = cache.get(f"{self.room_name}_windows")
             game_width = min(windows["width"])
             game_height = min(windows["height"])
@@ -299,9 +301,13 @@ class GameConsumer(AsyncWebsocketConsumer):
         cache.set(f"{self.room_name}_nicknames", current_nicknames)
         logger.debug(f"current_nicknames: {current_nicknames}")
 
+        await self.send_nickname_validation(current_nicknames)
+
         if len(current_nicknames) == 4:
             logger.debug("4명이 다 들어왔습니다!")
             GameConsumer.is_final[self.room_name] = False
+            # 현재 방의 상태를 in_game = True로 변경
+            await self.set_room_in_game()
             await self.send_start_game(current_participants["players"][0])
 
         logger.debug("--------------after update--------------")
@@ -314,10 +320,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         logger.debug(f"after change -> current_participants: {current_participants}")
         logger.debug("==========================================")
 
-        self.nickname = tournament_nickname  # 토너먼트면 self.nickname까지 tournament_nickname으로 변경
-
-        await self.send_nickname_validation(current_nicknames)
-
     async def game_settings(self, game_width, game_height):
         self.game_width = game_width
         self.game_height = game_height
@@ -328,14 +330,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         current_participants = cache.get(f"{self.room_name}_participants")
         winners = cache.get(f"{self.room_name}_winners", [])
 
-        # 현재 방의 상태를 in_game = True로 변경
-        rooms = cache.get("rooms", {})
-        logger.debug(f"Rooms: {rooms}")
-        rooms_details = rooms.get(self.room_name, {})
-        rooms_details["in_game"] = True
-        rooms[self.room_name] = rooms_details
-        cache.set("rooms", rooms)
-
         # player lefts room before start game
         if len(winners) == 2 and len(current_participants["players"]) < 2:
             # only in tournament-final-round
@@ -345,7 +339,27 @@ class GameConsumer(AsyncWebsocketConsumer):
             return
         elif len(current_participants["players"]) < 2:
             # another round
-            await self.send_game_data("game_start")
+            game_data = {"players": current_participants["players"]}
+            if self.mode == "REMOTE":
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        "type": "broadcast_event",
+                        "event_type": "game_start",
+                        "data": game_data,
+                    },
+                )
+            else:
+                current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+                if self.nickname == current_nicknames[0][0]:
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            "type": "broadcast_event",
+                            "event_type": "game_start",
+                            "data": game_data,
+                        },
+                    )
             return
 
         # init and send game_data
@@ -613,7 +627,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.send_game_data("game_start")
 
         # sleep 1sec and end_game
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
         winner = None
         loser = None
         # current participant will be winner
@@ -625,6 +639,14 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.scores[participant] = 0
                 loser = participant
         await self.end_game(winner, loser)
+
+    async def set_room_in_game(self):
+        rooms = cache.get("rooms", {})
+        logger.debug(f"Rooms: {rooms}")
+        rooms_details = rooms.get(self.room_name, {})
+        rooms_details["in_game"] = True
+        rooms[self.room_name] = rooms_details
+        cache.set("rooms", rooms)
 
     """
     ** send to group method
@@ -670,11 +692,10 @@ class GameConsumer(AsyncWebsocketConsumer):
         players = current_participants["players"]
         if (
             self.mode == "TOURNAMENT"
-            and GameConsumer.is_final[self.room_name] == True
+            and GameConsumer.is_final[self.room_name]
             and len(players) < 2
         ):
             players = cache.get(f"{self.room_name}_winners", [])
-        # if len(players) < 2: game_data에 players만 넣기
         game_data = {
             "is_final": GameConsumer.is_final[self.room_name],
             "game_width": self.game_width,
