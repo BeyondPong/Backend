@@ -336,33 +336,13 @@ class GameConsumer(AsyncWebsocketConsumer):
         # player lefts room before start game
         if len(winners) == 2 and len(current_participants["players"]) < 2:
             # only in tournament-final-round
-            await self.handle_pre_game_player_exit(
+            await self.handle_pre_final_game_player_exit(
                 current_participants["players"], winners
             )
             return
         elif len(current_participants["players"]) < 2:
-            # another round
-            game_data = {"players": current_participants["players"]}
-            if self.mode == "REMOTE":
-                await self.channel_layer.group_send(
-                    self.room_group_name,
-                    {
-                        "type": "broadcast_event",
-                        "event_type": "game_start",
-                        "data": game_data,
-                    },
-                )
-            else:
-                current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
-                if self.nickname == current_nicknames[0][0]:
-                    await self.channel_layer.group_send(
-                        self.room_group_name,
-                        {
-                            "type": "broadcast_event",
-                            "event_type": "game_start",
-                            "data": game_data,
-                        },
-                    )
+            # another round will be stopped game
+            await self.send_pre_game_player_exit(current_participants["players"])
             return
 
         # init and send game_data
@@ -624,7 +604,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             },
         )
 
-    async def handle_pre_game_player_exit(self, players, winners):
+    async def handle_pre_final_game_player_exit(self, players, winners):
         self.running_user = False
         await self.init_data(winner_setting=True)
         self.scores = {nickname: 0 for nickname in winners}
@@ -687,6 +667,21 @@ class GameConsumer(AsyncWebsocketConsumer):
                     "valid": True,
                     "nicknames": serialized_nicknames,
                 },
+            },
+        )
+
+    async def send_pre_game_player_exit(self, current_players):
+        game_data = {"players": current_players}
+        if self.mode == "TOURNAMENT":
+            current_nicknames = cache.get(f"{self.room_name}_nicknames", [])
+            if self.nickname != current_nicknames[0][0]:
+                return
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "broadcast_event",
+                "event_type": "game_start",
+                "data": game_data,
             },
         )
 
