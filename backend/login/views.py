@@ -35,6 +35,20 @@ logger = logging.getLogger(__name__)
 class OAuth42SocialLoginView(APIView):
     permission_classes = [AllowAny]
 
+    def get(self, request):
+        request_data = {
+            "client_id": settings.OAUTH_CLIENT_ID,
+            "redirect_uri": settings.OAUTH_REDIRECT_URI,
+            "response_type": "code",
+        }
+
+        redirect_url = (
+            f"{settings.OAUTH_AUTHORIZATION_URL}?client_id={request_data['client_id']}"
+            f"&redirect_uri={request_data['redirect_uri']}&response_type={request_data['response_type']}"
+        )
+
+        return Response({"redirect_url": redirect_url})
+
     def post(self, request):
         # get 'code' from request body
         code = request.data.get("code")
