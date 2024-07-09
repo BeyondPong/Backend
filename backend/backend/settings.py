@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_yasg",
     "corsheaders",
+    "csp",
     "login",
     "game",
     "user",
@@ -73,6 +74,8 @@ INSTALLED_APPS = [
 
 
 MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "csp.middleware.CSPMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -106,7 +109,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 # CORS_ALLOWED_ORIGINS = [
 #     "http://localhost:5173",
 #     "https://localhost:5173",
-    # config("CORS_ALLOWED_ORIGIN"),
+#     config("CORS_ALLOWED_ORIGIN"),
 # ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -220,6 +223,7 @@ CHANNEL_LAYERS = {
     },
 }
 
+# debug
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -233,3 +237,19 @@ LOGGING = {
         "level": "DEBUG",  # 필요한 경우 INFO, WARNING 등으로 변경 가능
     },
 }
+
+# csp setting
+CSP_DEFAULT_SRC = ("'self'",)
+CSP_SCRIPT_SRC = ("'self'",)
+CSP_STYLE_SRC = (
+    "'self'",
+    "https://fonts.googleapis.com",  # Google Fonts
+)
+CSP_IMG_SRC = (
+    "'self'",
+    "https://res.cloudinary.com",  # Cloudinary
+)
+CSP_FONT_SRC = (
+    "'self'",
+    "https://fonts.gstatic.com",  # Google Fonts
+)
